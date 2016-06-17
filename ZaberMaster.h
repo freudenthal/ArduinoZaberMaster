@@ -8,7 +8,6 @@ Zaber master controller. Takes a serial bus and controls a Zaber bus.
 #define ZaberMaster_h
 
 #include "Arduino.h"
-#include <EventManager.h>
 
 #define ZaberMaxDataString 8
 #define ZaberMaxReplyData 4
@@ -18,12 +17,14 @@ Zaber master controller. Takes a serial bus and controls a Zaber bus.
 #define CommandBufferSize 24
 #define ReturnBufferSize 24
 #define ZaberParameterMaxLength 5
+#define ZaberInitializationStepMax 5
 
 typedef void ( *FinishedListener )();
-typedef void ( *EventListener )( int eventCode, int eventParam );
 class ZaberMaster
 {
 	public:
+		typedef void(ZaberMaster::*CommandSentCallback)();
+		typedef void(ZaberMaster::*ReplyReceivedCallback)();
 		enum class MessageType : uint8_t 
 		{
 			Reply,
@@ -91,7 +92,7 @@ class ZaberMaster
 		{
 			None,
 			DriverDisabled,
-			EncorderError,
+			EncoderError,
 			StalledAndStopped,
 			ExcessiveTwist,
 			StreamBoundErrors,
@@ -269,7 +270,6 @@ class ZaberMaster
 			DeadBands,
 			Add,
 			Alert,
-			Info,
 			Clear,
 			Stream,
 			Setup,
@@ -315,11 +315,8 @@ class ZaberMaster
 			Pos,
 			Park,
 			Unpark,
-			Setup,
 			Angle,
 			Ratio,
-			Info,
-			Clear,
 			Count
 		};
 		enum class CommandParameterType : uint8_t 
@@ -336,26 +333,28 @@ class ZaberMaster
 			Device,
 			Axis,
 			Either,
-			All
+			All,
 			Count
 		};
 		struct CommandString
 		{
 			CommandMessageType Command;
-			char* String;
+			const char* String;
 			size_t Count;
 			CommandScope Scope;
+			const CommandSentCallback SentCallback;
+			const ReplyReceivedCallback ReceivedCallback;
 		};
 		struct ParameterMessageString
 		{
 			ParameterMessageType Parameter;
-			char* String;
+			const char* String;
 			size_t Count;
 		};
 		struct SettingString
 		{
 			SettingMessageType Setting;
-			char* String;
+			const char* String;
 			size_t Count;
 			CommandScope Scope;
 			bool Writeable;
@@ -383,31 +382,37 @@ class ZaberMaster
 			CommandParameter Parameters[ZaberParameterMaxLength];
 			uint8_t ParameterCount;
 		};
+		struct InitilizationStepsList
+		{
+			CommandMessage Message[ZaberInitializationStepMax];
+			size_t Count;
+			size_t CurrentIndex;
+		};
 		struct ReplyDataError
 		{
 			ReplyDataErrorType Type;
-			char* Flag;
+			const char* Flag;
 			size_t FlagLength;
-			char* String;
-			char* StringLength;
+			const char* String;
+			size_t StringLength;
 			bool TryAgain;
 			bool Important;
 		};
 		struct ReplyFlag
 		{
 			FlagType Type;
-			char* Flag;
+			const char* Flag;
 		};
 		struct ReplyStatus
 		{
 			StatusType Type;
-			char* Flag;
+			const char* Flag;
 		};
 		struct Warning
 		{
 			WarningType Type;
-			char* Flag;
-			char* String;
+			const char* Flag;
+			const char* String;
 			size_t StringLength;
 			bool NeedsClearing;
 			bool Important;
@@ -442,7 +447,7 @@ class ZaberMaster
 			uint8_t Device;
 			uint32_t StartTime;
 		};
-		ZaberMaster(HardwareSerial* serial); //Invoke with FW102(&SerialN);
+		ZaberMaster(HardwareSerial* serial); //Invoke with ZaberMaster(&SerialN);
 		~ZaberMaster();
 		bool Initialize();
 		bool SendShutDown();
@@ -485,14 +490,17 @@ class ZaberMaster
 		uint8_t AxesFound[ZaberMaxDevices];
 		CommandMessage CurrentCommand;
 		char CommandBuffer[CommandBufferSize];
-		uint32_t LastTransmittionTime;
+		uint32_t LastTransmitionTime;
 		bool SendingCommand;
 		bool ExpectingReply;
 		bool ExpectingAlert[ZaberMaxDevices][ZaberMaxAxes];
+		uint32_t LastPosition[ZaberMaxDevices][ZaberMaxAxes];
 		bool SupportChaining;
 		FinishedListener MovementComplete;
 		FinishedListener InternalMovementComplete;
 		FinishedListener ReplyComplete;
+		CommandSentCallback CurrentSentCallback;
+		ReplyReceivedCallback CurrentReceivedCallback;
 		char ReturnBuffer[ReturnBufferSize];
 		uint8_t ReturnBufferPosition;
 		ReplyMessage ReturnMessage;
@@ -503,11 +511,11 @@ class ZaberMaster
 		void ParseCharacterForReply(char Character);
 		void ParseCharacterForAlert(char Character);
 		void ParseType(char Character);
-		void ParseDevice(char Character, ZaberReplyParts NextState);
-		void ParseAxis(char Character, ZaberReplyParts NextState);
-		void ParseFlag(char Character, ZaberReplyParts NextState);
-		void ParseStatus(char Character, ZaberReplyParts NextState);
-		void ParseWarning(char Character, ZaberReplyParts NextState);
+		void ParseDevice(char Character, ReplyParts NextState);
+		void ParseAxis(char Character, ReplyParts NextState);
+		void ParseFlag(char Character, ReplyParts NextState);
+		void ParseStatus(char Character, ReplyParts NextState);
+		void ParseWarning(char Character, ReplyParts NextState);
 		void ParseData(char Character);
 		void ClearReturnBuffer();
 		void ResetReturnMessage();
@@ -515,6 +523,8 @@ class ZaberMaster
 		void ProcessReplyMessage();
 		void ProcessAlertMessage();
 		void SendCommand();
+		void ProcessGetReceived();
+		void ProcessMoveStarted();
 		uint8_t IntToCharPointer(uint8_t Input, char* Buffer, size_t BufferSize);
 		uint8_t FloatToCharPointer(float Input, char* Buffer, size_t BufferSize);
 		uint8_t CharPointerToInt(char* Buffer, size_t BufferSize);
@@ -532,4 +542,5 @@ class ZaberMaster
 		static const ReplyStatus StatusIdentifier[];
 		static const ReplyFlag FlagIdentifier[];
 		static const Warning WarningIdentifier[];
-}
+};
+#endif
