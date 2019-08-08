@@ -17,9 +17,10 @@ Zaber master controller. Takes a serial bus and controls a Zaber bus.
 #define CommandBufferSize 24
 #define ReturnBufferSize 24
 #define ZaberParameterMaxLength 5
-#define ZaberInitializationStepMax 5
+#define ZaberMasterInitializationStepsCount 4
 
-typedef void ( *FinishedListener )();
+typedef void ( *ZaberFinishedListener )();
+typedef void ( *ZaberFinishedListenerDeviceAxis )(uint8_t Device, uint8_t Axis);
 class ZaberMaster
 {
 	public:
@@ -382,12 +383,6 @@ class ZaberMaster
 			CommandParameter Parameters[ZaberParameterMaxLength];
 			uint8_t ParameterCount;
 		};
-		struct InitilizationStepsList
-		{
-			CommandMessage Message[ZaberInitializationStepMax];
-			size_t Count;
-			size_t CurrentIndex;
-		};
 		struct ReplyDataError
 		{
 			ReplyDataErrorType Type;
@@ -450,7 +445,6 @@ class ZaberMaster
 		ZaberMaster(HardwareSerial* serial); //Invoke with ZaberMaster(&SerialN);
 		~ZaberMaster();
 		bool Initialize();
-		bool SendShutDown();
 		bool SendRenumber();
 		bool SendEStop(uint8_t Device, uint8_t Axis);
 		bool SendStop(uint8_t Device, uint8_t Axis);
@@ -459,31 +453,33 @@ class ZaberMaster
 		bool SendSystemRestore(uint8_t Device);
 		bool SendClearWarnings(uint8_t Device);
 		bool SendFindRange(uint8_t Device, uint8_t Axis);
-		bool SendMoveRel(uint8_t Device, uint8_t Axis, uint16_t Steps);
-		bool SendMoveAbs(uint8_t Device, uint8_t Axis, uint16_t Steps);
-		bool SendSetAcceleration(uint8_t Device, uint8_t Axis, uint16_t Acceleration);
-		bool SendGetAcceleration(uint8_t Device, uint8_t Axis, uint16_t* Acceleration);
-		bool SendSetMaxSpeed(uint8_t Device, uint8_t Axis, uint16_t MaxSpeed);
-		bool SendGetMaxSpeed(uint8_t Device, uint8_t Axis, uint16_t* MaxSpeed);
+		bool SendMoveRel(uint8_t Device, uint8_t Axis, uint32_t Steps);
+		bool SendMoveAbs(uint8_t Device, uint8_t Axis, uint32_t Steps);
+		bool SendSetAcceleration(uint8_t Device, uint8_t Axis, uint32_t Acceleration);
+		bool SendGetAcceleration(uint8_t Device, uint8_t Axis);
+		bool SendSetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t MaxSpeed);
+		bool SendGetMaxSpeed(uint8_t Device, uint8_t Axis);
 		bool SendSetLimitMax(uint8_t Device, uint8_t Axis, uint32_t LimitMax);
-		bool SendGetLimitMax(uint8_t Device, uint8_t Axis, uint32_t* LimitMax);
+		bool SendGetLimitMax(uint8_t Device, uint8_t Axis);
 		bool SendSetLimitMin(uint8_t Device, uint8_t Axis, uint32_t LimitMin);
-		bool SendGetLimitMin(uint8_t Device, uint8_t Axis, uint32_t* LimitMin);
+		bool SendGetLimitMin(uint8_t Device, uint8_t Axis);
 		bool SendSetAlertStatus(uint8_t Device, bool Enable);
-		bool SendGetAlertStatus(uint8_t Device, bool* Enable);
+		bool SendGetAlertStatus(uint8_t Device);
 		bool SendSetKnobEnable(uint8_t Device, uint8_t Axis, bool Enable);
-		bool SendGetKnobEnable(uint8_t Device, uint8_t Axis, bool* Enable);
+		bool SendGetKnobEnable(uint8_t Device, uint8_t Axis);
 		bool SendSetParked(uint8_t Device, uint8_t Axis, bool Enable);
-		bool SendGetParked(uint8_t Device, uint8_t Axis, bool* Enable);
 		bool SendSetResolution(uint8_t Device, uint8_t Axis, uint8_t Resolution);
-		bool SendGetResolution(uint8_t Device, uint8_t Axis, uint8_t* Resolution);
-		bool SendGetPosition(uint8_t Device, uint8_t Axis, uint16_t* Position);
+		bool SendGetResolution(uint8_t Device, uint8_t Axis);
+		bool SendGetPosition(uint8_t Device, uint8_t Axis);
 		bool SendGetAxes(uint8_t Device);
-		void SetMovementCompleteCallback(FinishedListener _MovementComplete);
-		void SetReplyCompleteCallback(FinishedListener _ReplyComplete);
+		bool GetPosition(uint8_t Device, uint8_t Axis, uint32_t* Position);
+		void SetInitializationCompleteCallback(ZaberFinishedListener _InitializationComplete);
+		void SetMovementCompleteCallback(ZaberFinishedListenerDeviceAxis _MovementComplete);
+		void SetReplyCompleteCallback(ZaberFinishedListener _ReplyComplete);
 		void CheckSerial();
 	private:
 		HardwareSerial* _HardwareSerial;
+		bool Initializing;
 		bool Initialized;
 		uint8_t InitializationStep;
 		uint8_t DevicesFound;
@@ -493,12 +489,12 @@ class ZaberMaster
 		uint32_t LastTransmitionTime;
 		bool SendingCommand;
 		bool ExpectingReply;
+		bool UseAlerts;
 		bool ExpectingAlert[ZaberMaxDevices][ZaberMaxAxes];
 		uint32_t LastPosition[ZaberMaxDevices][ZaberMaxAxes];
-		bool SupportChaining;
-		FinishedListener MovementComplete;
-		FinishedListener InternalMovementComplete;
-		FinishedListener ReplyComplete;
+		ZaberFinishedListenerDeviceAxis MovementComplete;
+		ZaberFinishedListener ReplyComplete;
+		ZaberFinishedListener InitializationComplete;
 		CommandSentCallback CurrentSentCallback;
 		ReplyReceivedCallback CurrentReceivedCallback;
 		char ReturnBuffer[ReturnBufferSize];
@@ -524,8 +520,11 @@ class ZaberMaster
 		void ProcessAlertMessage();
 		void SendCommand();
 		void ProcessGetReceived();
+		void ProcessRenumberReceived();
 		void ProcessMoveStarted();
-		uint8_t IntToCharPointer(uint8_t Input, char* Buffer, size_t BufferSize);
+		void RunNextInitializationStep();
+		void SetExpectingAlerts(uint8_t Device, uint8_t Axis);
+		uint8_t IntToCharPointer(uint32_t Input, char* Buffer, size_t BufferSize);
 		uint8_t FloatToCharPointer(float Input, char* Buffer, size_t BufferSize);
 		uint8_t CharPointerToInt(char* Buffer, size_t BufferSize);
 		float CharPointerToFloat(char* Buffer, size_t BufferSize);
@@ -534,6 +533,8 @@ class ZaberMaster
 		static const char SpaceCharacter;
 		static const char CommandMarkerCharacter;
 		static const char GetCharacter;
+		static const uint8_t InitializationStepsCount = ZaberMasterInitializationStepsCount;
+		static const CommandMessage InitilizationSteps[];
 		static const CommandString CommandIdentifier[];
 		static const ParameterMessageString ParameterIdentifier[];
 		static const SettingString SettingIdentifier[];

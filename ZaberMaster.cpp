@@ -5,11 +5,18 @@ const char ZaberMaster::EndOfLineCharacter = '\n';
 const char ZaberMaster::SpaceCharacter = ' ';
 const char ZaberMaster::CommandMarkerCharacter = '/';
 const char ZaberMaster::GetCharacter = '?';
+const ZaberMaster::CommandMessage ZaberMaster::InitilizationSteps[]=
+{
+	{CommandMessageType::Renumber,false,false,0,0,0,{{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},0},
+	{CommandMessageType::Get,false,false,0,0,0,{{{.Setting=SettingMessageType::SystemAxisCount},CommandParameterType::Setting},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},1 },
+	{CommandMessageType::Set,false,false,0,0,0,{{{.Setting=SettingMessageType::CommAlert},CommandParameterType::Setting},{{.Integer = 1},CommandParameterType::Integer},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},2},
+	{CommandMessageType::ToolsFindRange,false,false,0,0,0,{{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},0},
+};
 const ZaberMaster::CommandString ZaberMaster::CommandIdentifier[]=
 {
-	{CommandMessageType::EStop,"estop",5,CommandScope::Axis, NULL, NULL},
+	{CommandMessageType::EStop,"estop",5,CommandScope::Axis, &ZaberMaster::ProcessMoveStarted, NULL},
 	{CommandMessageType::Get,"get",3,CommandScope::Either, NULL, &ZaberMaster::ProcessGetReceived },
-	{CommandMessageType::Home,"home",4,CommandScope::Axis, NULL, NULL },
+	{CommandMessageType::Home,"home",4,CommandScope::Axis, &ZaberMaster::ProcessMoveStarted, NULL },
 	{CommandMessageType::IOInfo,"io info",7,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::IOGet,"io get",6,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::IOSet,"io set",6,CommandScope::Device, NULL, NULL },
@@ -17,15 +24,15 @@ const ZaberMaster::CommandString ZaberMaster::CommandIdentifier[]=
 	{CommandMessageType::Key,"key",3,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::LockStep,"lockstep",8,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::Move,"move",4,CommandScope::Axis, &ZaberMaster::ProcessMoveStarted, NULL },
-	{CommandMessageType::Renumber,"renumber",8,CommandScope::Device, NULL, NULL },
+	{CommandMessageType::Renumber,"renumber",8,CommandScope::Device, NULL, &ZaberMaster::ProcessRenumberReceived },
 	{CommandMessageType::Set,"set",3,CommandScope::Either, NULL, NULL },
-	{CommandMessageType::Stop,"stop",4,CommandScope::Axis, NULL, NULL },
+	{CommandMessageType::Stop,"stop",4,CommandScope::Axis, &ZaberMaster::ProcessMoveStarted, NULL },
 	{CommandMessageType::Stream,"stream",6,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::SystemReset,"system reset",12,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::SystemRestore,"system restore",14,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::ToolsEcho,"tools echo",10,CommandScope::Device, NULL, NULL },
-	{CommandMessageType::ToolsFindRange,"tools findrange",15,CommandScope::Axis, NULL, NULL },
-	{CommandMessageType::ToolsGoToLimit,"tools gotolimit",15,CommandScope::Axis, NULL, NULL },
+	{CommandMessageType::ToolsFindRange,"tools findrange",15,CommandScope::Axis, &ZaberMaster::ProcessMoveStarted, NULL },
+	{CommandMessageType::ToolsGoToLimit,"tools gotolimit",15,CommandScope::Axis, &ZaberMaster::ProcessMoveStarted, NULL },
 	{CommandMessageType::ToolsParking,"tools parking",13,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::ToolsSetComm,"tools setcomm",13,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::ToolsStorePos,"tools storepos",14,CommandScope::Axis, NULL, NULL },
@@ -257,6 +264,7 @@ const ZaberMaster::Warning ZaberMaster::WarningIdentifier[]=
 
 ZaberMaster::ZaberMaster(HardwareSerial* serial)
 {
+	_HardwareSerial = serial;
 	Initialized = false;
 	InitializationStep = 0;
 	DevicesFound = 0;
@@ -277,7 +285,7 @@ ZaberMaster::ZaberMaster(HardwareSerial* serial)
 	SendingCommand = false;
 	ExpectingReply = false;
 	memset(ExpectingAlert,0,sizeof(ExpectingAlert));
-	SupportChaining = true;
+	InitializationComplete = NULL;
 	MovementComplete = NULL;
 	ReplyComplete = NULL;
 	memset(ReturnBuffer,0,sizeof(ReturnBuffer));
@@ -308,28 +316,53 @@ ZaberMaster::~ZaberMaster()
 }
 bool ZaberMaster::Initialize()
 {
-
-	return false;
-}
-bool ZaberMaster::SendShutDown()
-{
-
-	return false;
+	//Serial.print("Begin initializing.");
+	if (!Initializing)
+	{
+		Initializing = true;
+		InitializationStep = 0;
+		Initialized = false;
+		DevicesFound = 0;
+		for (size_t Index = 0; Index < ZaberMaxDevices; Index++)
+		{
+			AxesFound[Index] = 0;
+		}
+		RunNextInitializationStep();
+	}
+	return true;
 }
 bool ZaberMaster::SendRenumber()
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Renumber;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = 0;
+	CurrentCommand.Device = 0;
+	CurrentCommand.ParameterCount = 0;
+	SendCommand();
+	return true;
 }
 bool ZaberMaster::SendEStop(uint8_t Device, uint8_t Axis)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::EStop;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.ParameterCount = 0;
+	SendCommand();
+	return true;
 }
 bool ZaberMaster::SendStop(uint8_t Device, uint8_t Axis)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::EStop;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.ParameterCount = 0;
+	SendCommand();
+	return true;
 }
 bool ZaberMaster::SendHome(uint8_t Device, uint8_t Axis)
 {
@@ -339,23 +372,44 @@ bool ZaberMaster::SendHome(uint8_t Device, uint8_t Axis)
 	CurrentCommand.Axis = Axis;
 	CurrentCommand.Device = Device;
 	CurrentCommand.ParameterCount = 0;
+	SetExpectingAlerts(Device, Axis);
 	SendCommand();
 	return true;
 }
 bool ZaberMaster::SendSystemReset(uint8_t Device)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::SystemReset;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = 0;
+	CurrentCommand.Device = Device;
+	CurrentCommand.ParameterCount = 0;
+	SendCommand();
+	return true;
 }
 bool ZaberMaster::SendSystemRestore(uint8_t Device)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::SystemRestore;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = 0;
+	CurrentCommand.Device = Device;
+	CurrentCommand.ParameterCount = 0;
+	SendCommand();
+	return true;
 }
 bool ZaberMaster::SendClearWarnings(uint8_t Device)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Warnings;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = 0;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Parameter;
+	CurrentCommand.Parameters[0].Value.Parameter = ParameterMessageType::Clear;
+	CurrentCommand.ParameterCount = 1;
+	SendCommand();
+	return true;
 }
 bool ZaberMaster::SendFindRange(uint8_t Device, uint8_t Axis)
 {
@@ -365,25 +419,11 @@ bool ZaberMaster::SendFindRange(uint8_t Device, uint8_t Axis)
 	CurrentCommand.Axis = Axis;
 	CurrentCommand.Device = Device;
 	CurrentCommand.ParameterCount = 0;
+	SetExpectingAlerts(Device, Axis);
 	SendCommand();
 	return true;
 }
-bool ZaberMaster::SendMoveRel(uint8_t Device, uint8_t Axis, uint16_t Steps)
-{
-	CurrentCommand.Command = CommandMessageType::Move;
-	CurrentCommand.MessageComplete = false;
-	CurrentCommand.MessageStarted = false;
-	CurrentCommand.Axis = Axis;
-	CurrentCommand.Device = Device;
-	CurrentCommand.Parameters[0].Type = CommandParameterType::Parameter;
-	CurrentCommand.Parameters[0].Value.Parameter = ParameterMessageType::Abs;
-	CurrentCommand.Parameters[1].Type = CommandParameterType::Integer;
-	CurrentCommand.Parameters[1].Value.Integer = Steps;
-	CurrentCommand.ParameterCount = 2;
-	SendCommand();
-	return true;
-}
-bool ZaberMaster::SendMoveAbs(uint8_t Device, uint8_t Axis, uint16_t Steps)
+bool ZaberMaster::SendMoveRel(uint8_t Device, uint8_t Axis, uint32_t Steps)
 {
 	CurrentCommand.Command = CommandMessageType::Move;
 	CurrentCommand.MessageComplete = false;
@@ -395,105 +435,313 @@ bool ZaberMaster::SendMoveAbs(uint8_t Device, uint8_t Axis, uint16_t Steps)
 	CurrentCommand.Parameters[1].Type = CommandParameterType::Integer;
 	CurrentCommand.Parameters[1].Value.Integer = Steps;
 	CurrentCommand.ParameterCount = 2;
+	SetExpectingAlerts(Device, Axis);
 	SendCommand();
 	return true;
 }
-bool ZaberMaster::SendSetAcceleration(uint8_t Device, uint8_t Axis, uint16_t Acceleration)
+bool ZaberMaster::SendMoveAbs(uint8_t Device, uint8_t Axis, uint32_t Steps)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Move;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Parameter;
+	CurrentCommand.Parameters[0].Value.Parameter = ParameterMessageType::Abs;
+	CurrentCommand.Parameters[1].Type = CommandParameterType::Integer;
+	CurrentCommand.Parameters[1].Value.Integer = Steps;
+	CurrentCommand.ParameterCount = 2;
+	SetExpectingAlerts(Device, Axis);
+	//Serial.print("mi");
+	//Serial.print(Steps);
+	//Serial.print("mi");
+	SendCommand();
+	return true;
 }
-bool ZaberMaster::SendGetAcceleration(uint8_t Device, uint8_t Axis, uint16_t* Acceleration)
+void ZaberMaster::SetExpectingAlerts(uint8_t Device, uint8_t Axis)
 {
-
-	return false;
+	if (Device > 0)
+	{
+		if (Axis > 0)
+		{
+			ExpectingAlert[Device - 1][Axis - 1] = true;
+		}
+	}
+	else
+	{
+		if (Axis > 0)
+		{
+			for (size_t DeviceIndex = 0; DeviceIndex < DevicesFound; DeviceIndex++)
+			{
+				ExpectingAlert[DeviceIndex][Axis - 1] = true;
+			}
+		}
+		else
+		{
+			for (size_t DeviceIndex = 0; DeviceIndex < DevicesFound; DeviceIndex++)
+			{
+				for (size_t AxisIndex = 0; AxisIndex < AxesFound[DeviceIndex]; AxisIndex++)
+				{
+					ExpectingAlert[DeviceIndex][Axis - 1] = true;
+				}
+				ExpectingAlert[DeviceIndex][Axis - 1] = true;
+			}
+		}
+	}
 }
-bool ZaberMaster::SendSetMaxSpeed(uint8_t Device, uint8_t Axis, uint16_t MaxSpeed)
+bool ZaberMaster::SendSetAcceleration(uint8_t Device, uint8_t Axis, uint32_t Acceleration)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Set;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::Accel;
+	CurrentCommand.Parameters[1].Type = CommandParameterType::Integer;
+	CurrentCommand.Parameters[1].Value.Integer = Acceleration;
+	CurrentCommand.ParameterCount = 2;
+	SendCommand();
+	return true;
 }
-bool ZaberMaster::SendGetMaxSpeed(uint8_t Device, uint8_t Axis, uint16_t* MaxSpeed)
+bool ZaberMaster::SendGetAcceleration(uint8_t Device, uint8_t Axis)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Get;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::Accel;
+	CurrentCommand.ParameterCount = 1;
+	SendCommand();
+	return true;
+}
+bool ZaberMaster::SendSetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t MaxSpeed)
+{
+	CurrentCommand.Command = CommandMessageType::Set;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::MaxSpeed;
+	CurrentCommand.Parameters[1].Type = CommandParameterType::Integer;
+	CurrentCommand.Parameters[1].Value.Integer = MaxSpeed;
+	CurrentCommand.ParameterCount = 2;
+	SendCommand();
+	return true;
+}
+bool ZaberMaster::SendGetMaxSpeed(uint8_t Device, uint8_t Axis)
+{
+	CurrentCommand.Command = CommandMessageType::Get;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::MaxSpeed;
+	CurrentCommand.ParameterCount = 1;
+	SendCommand();
+	return true;
 }
 bool ZaberMaster::SendSetLimitMax(uint8_t Device, uint8_t Axis, uint32_t LimitMax)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Set;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::LimitMax;
+	CurrentCommand.Parameters[1].Type = CommandParameterType::Integer;
+	CurrentCommand.Parameters[1].Value.Integer = LimitMax;
+	CurrentCommand.ParameterCount = 2;
+	SendCommand();
+	return true;
 }
-bool ZaberMaster::SendGetLimitMax(uint8_t Device, uint8_t Axis, uint32_t* LimitMax)
+bool ZaberMaster::SendGetLimitMax(uint8_t Device, uint8_t Axis)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Get;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::LimitMax;
+	CurrentCommand.ParameterCount = 1;
+	SendCommand();
+	return true;
 }
 bool ZaberMaster::SendSetLimitMin(uint8_t Device, uint8_t Axis, uint32_t LimitMin)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Set;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::LimitMin;
+	CurrentCommand.Parameters[1].Type = CommandParameterType::Integer;
+	CurrentCommand.Parameters[1].Value.Integer = LimitMin;
+	CurrentCommand.ParameterCount = 2;
+	SendCommand();
+	return true;
 }
-bool ZaberMaster::SendGetLimitMin(uint8_t Device, uint8_t Axis, uint32_t* LimitMin)
+bool ZaberMaster::SendGetLimitMin(uint8_t Device, uint8_t Axis)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Get;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::LimitMin;
+	CurrentCommand.ParameterCount = 1;
+	SendCommand();
+	return true;
 }
 bool ZaberMaster::SendSetAlertStatus(uint8_t Device, bool Enable)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Set;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = 0;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::CommAlert;
+	CurrentCommand.Parameters[1].Type = CommandParameterType::Integer;
+	CurrentCommand.Parameters[1].Value.Integer = (Enable) ? 1 : 0;
+	CurrentCommand.ParameterCount = 2;
+	SendCommand();
+	return true;
 }
-bool ZaberMaster::SendGetAlertStatus(uint8_t Device, bool* Enable)
+bool ZaberMaster::SendGetAlertStatus(uint8_t Device)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Get;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = 0;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::CommAlert;
+	CurrentCommand.ParameterCount = 1;
+	SendCommand();
+	return true;
 }
 bool ZaberMaster::SendSetKnobEnable(uint8_t Device, uint8_t Axis, bool Enable)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Set;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::KnobEnable;
+	CurrentCommand.Parameters[1].Type = CommandParameterType::Integer;
+	CurrentCommand.Parameters[1].Value.Integer = (Enable) ? 1 : 0;
+	CurrentCommand.ParameterCount = 2;
+	SendCommand();
+	return true;
 }
-bool ZaberMaster::SendGetKnobEnable(uint8_t Device, uint8_t Axis, bool* Enable)
+bool ZaberMaster::SendGetKnobEnable(uint8_t Device, uint8_t Axis)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Get;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::KnobEnable;
+	CurrentCommand.ParameterCount = 1;
+	SendCommand();
+	return true;
 }
 bool ZaberMaster::SendSetParked(uint8_t Device, uint8_t Axis, bool Enable)
 {
-
-	return false;
-}
-bool ZaberMaster::SendGetParked(uint8_t Device, uint8_t Axis, bool* Enable)
-{
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::ToolsParking;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = 0;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Parameter;
+	CurrentCommand.Parameters[0].Value.Parameter = (Enable) ? ParameterMessageType::Park : ParameterMessageType::Unpark;
+	CurrentCommand.ParameterCount = 1;
+	SendCommand();
+	return true;
 }
 bool ZaberMaster::SendSetResolution(uint8_t Device, uint8_t Axis, uint8_t Resolution)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Set;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::Resolution;
+	CurrentCommand.Parameters[1].Type = CommandParameterType::Integer;
+	CurrentCommand.Parameters[1].Value.Integer = Resolution;
+	CurrentCommand.ParameterCount = 2;
+	SendCommand();
+	return true;
 }
-bool ZaberMaster::SendGetResolution(uint8_t Device, uint8_t Axis, uint8_t* Resolution)
+bool ZaberMaster::SendGetResolution(uint8_t Device, uint8_t Axis)
 {
-
-	return false;
+	CurrentCommand.Command = CommandMessageType::Get;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::Resolution;
+	CurrentCommand.ParameterCount = 1;
+	SendCommand();
+	return true;
 }
-bool ZaberMaster::SendGetPosition(uint8_t Device, uint8_t Axis, uint16_t* Position)
+bool ZaberMaster::SendGetPosition(uint8_t Device, uint8_t Axis)
 {
+	CurrentCommand.Command = CommandMessageType::Get;
+	CurrentCommand.MessageComplete = false;
+	CurrentCommand.MessageStarted = false;
+	CurrentCommand.Axis = Axis;
+	CurrentCommand.Device = Device;
+	CurrentCommand.Parameters[0].Type = CommandParameterType::Setting;
+	CurrentCommand.Parameters[0].Value.Setting = SettingMessageType::Pos;
+	CurrentCommand.ParameterCount = 1;
+	SendCommand();
+	return true;
+}
+bool ZaberMaster::GetPosition(uint8_t Device, uint8_t Axis, uint32_t* Position)
+{
+	if (Device < ZaberMaxDevices && Axis < ZaberMaxAxes)
+	{
+		if (Device < DevicesFound)
+		{
+			if (Axis < AxesFound[Device])
+			{
+				*Position = LastPosition[Device][Axis];
+				return true;
+			}
+		}
+	}
 	return false;
 }
-void ZaberMaster::SetMovementCompleteCallback(FinishedListener _MovementComplete)
+void ZaberMaster::SetInitializationCompleteCallback(ZaberFinishedListener _InitializationComplete)
+{
+	InitializationComplete = _InitializationComplete;
+}
+void ZaberMaster::SetMovementCompleteCallback(ZaberFinishedListenerDeviceAxis _MovementComplete)
 {
 	MovementComplete = _MovementComplete;
 }
-void ZaberMaster::SetReplyCompleteCallback(FinishedListener _ReplyComplete)
+void ZaberMaster::SetReplyCompleteCallback(ZaberFinishedListener _ReplyComplete)
 {
 	ReplyComplete = _ReplyComplete;
 }
-uint8_t ZaberMaster::IntToCharPointer(uint8_t Input, char* Buffer, size_t BufferSize)
+uint8_t ZaberMaster::IntToCharPointer(uint32_t Input, char* Buffer, size_t BufferSize)
 {
 	memset(Buffer,0,BufferSize);
-	return sprintf(Buffer, "%u", Input);
+	return sprintf(Buffer, "%lu", Input);
 }
 uint8_t ZaberMaster::FloatToCharPointer(float Input, char* Buffer, size_t BufferSize)
 {
@@ -538,11 +786,16 @@ float ZaberMaster::CharPointerToFloat(char* Buffer, size_t BufferSize)
 }
 void ZaberMaster::CheckSerial()
 {
-	if (ExpectingReply)
+	if (_HardwareSerial->available() > 0)
 	{
-		if(_HardwareSerial->available() > 0)
+		char Character = _HardwareSerial->read();
+		//Serial.write(Character);
+		if (CurrentReplyPart == ReplyParts::Type)
 		{
-			char Character = _HardwareSerial->read();
+			ParseCharacterForReply(Character);
+		}
+		else
+		{
 			if (ReturnMessage.Type == MessageType::Info)
 			{
 				if (Character == EndOfLineCharacter)
@@ -560,13 +813,6 @@ void ZaberMaster::CheckSerial()
 			}
 		}
 	}
-	else
-	{
-		if(_HardwareSerial->available() > 0)
-		{
-			_HardwareSerial->clear();
-		}
-	}
 }
 void ZaberMaster::ParseType(char Character)
 {
@@ -575,6 +821,9 @@ void ZaberMaster::ParseType(char Character)
 	{
 		if (Character == MessageIdentifier[Index].Identifier)
 		{
+			//Serial.print('f');
+			//Serial.print(MessageIdentifier[Index].Identifier);
+			//Serial.print('f');
 			ReturnMessage.Type = MessageIdentifier[Index].Type;
 			ReturnMessage.StartTime = micros();
 			ReturnMessage.MessageStarted = true;
@@ -604,6 +853,9 @@ void ZaberMaster::ParseDevice(char Character, ReplyParts NextState)
 		if ( (DeviceNumber > 0) && (DeviceNumber < 100) )
 		{
 			ReturnMessage.Device = DeviceNumber;
+			//Serial.write('d');
+			//Serial.print(DeviceNumber);
+			//Serial.write('d');
 			ClearReturnBuffer();
 			CurrentReplyPart = NextState;
 		}
@@ -633,6 +885,9 @@ void ZaberMaster::ParseAxis(char Character, ReplyParts NextState)
 		if ( AxisNumber < 4 )
 		{
 			ReturnMessage.Axis = AxisNumber;
+			//Serial.write('a');
+			//Serial.print(AxisNumber);
+			//Serial.write('a');
 			ClearReturnBuffer();
 			CurrentReplyPart = NextState;
 		}
@@ -665,6 +920,9 @@ void ZaberMaster::ParseFlag(char Character, ReplyParts NextState)
 			if ( strcmp(ReturnBuffer, FlagIdentifier[Index].Flag) == 0)
 			{
 				ReturnMessage.Flag = FlagIdentifier[Index].Type;
+				//Serial.write('f');
+				//Serial.print(FlagIdentifier[Index].Flag);
+				//Serial.write('f');
 				ClearReturnBuffer();
 				CurrentReplyPart = NextState;
 				FlagFound = true;
@@ -699,8 +957,12 @@ void ZaberMaster::ParseStatus(char Character, ReplyParts NextState)
 			if ( strcmp(ReturnBuffer, StatusIdentifier[Index].Flag) == 0)
 			{
 				ReturnMessage.Status = StatusIdentifier[Index].Type;
+				//Serial.write('s');
+				//Serial.print(StatusIdentifier[Index].Flag);
+				//Serial.write('s');
 				ClearReturnBuffer();
 				CurrentReplyPart = NextState;
+				StatusFound = true;
 			}
 		}
 		if (!StatusFound)
@@ -723,11 +985,12 @@ void ZaberMaster::ParseWarning(char Character, ReplyParts NextState)
 			ReturnBufferPosition++;
 		}
 	}
-	else if (Character == SpaceCharacter || Character == EndOfLineCharacter || Character == SpaceCharacter)
+	else if ( (Character == CarriageReturnCharacter) || (Character == SpaceCharacter) || (Character == EndOfLineCharacter) )
 	{
 		if ( (Character != SpaceCharacter) && (ReturnMessage.Type == MessageType::Reply) )
 		{
 			FailToParse();
+			return;
 		}
 		ReturnBuffer[ReturnBufferPosition] = '\0';
 		bool Found = false;
@@ -736,6 +999,9 @@ void ZaberMaster::ParseWarning(char Character, ReplyParts NextState)
 			if ( strcmp(ReturnBuffer, WarningIdentifier[Index].Flag) == 0 )
 			{
 				ReturnMessage.Warning = WarningIdentifier[Index].Type;
+				//Serial.write('w');
+				//Serial.print(WarningIdentifier[Index].Flag);
+				//Serial.write('w');
 				Found = true;
 			}
 		}
@@ -745,6 +1011,7 @@ void ZaberMaster::ParseWarning(char Character, ReplyParts NextState)
 			if ( (NextState == ReplyParts::Type) && (ReturnMessage.Type == MessageType::Alert) )
 			{
 				ReturnMessage.MessageComplete = true;
+				CurrentReplyPart = ReplyParts::Type;
 				ProcessAlertMessage();
 			}
 			CurrentReplyPart = NextState;
@@ -804,6 +1071,9 @@ void ZaberMaster::ParseData(char Character)
 					ReturnBuffer[ReturnBufferPosition] = '\0';
 					ReturnMessage.Data[ReturnMessage.DataLength].Type = ReplyDataType::Integer;
 					ReturnMessage.Data[ReturnMessage.DataLength].Value.Integer = (int32_t)atoi(ReturnBuffer);
+					//Serial.write('d');
+					//Serial.print(ReturnMessage.Data[ReturnMessage.DataLength].Value.Integer);
+					//Serial.write('d');
 				}
 				ReturnMessage.DataLength++;
 			}
@@ -866,18 +1136,23 @@ void ZaberMaster::ParseData(char Character)
 }
 void ZaberMaster::ParseCharacterForAlert(char Character)
 {
+	//Serial.print("a");
 	switch(CurrentReplyPart)
 	{
 		case ReplyParts::Device:
+			//Serial.print("d");
 			ParseDevice(Character, ReplyParts::Axis);
 			break;
 		case ReplyParts::Axis:
+			//Serial.print("b");
 			ParseAxis(Character, ReplyParts::Status);
 			break;
 		case ReplyParts::Status:
+			//Serial.print("s");
 			ParseStatus(Character, ReplyParts::Warning);
 			break;
 		case ReplyParts::Warning:
+			//Serial.print("w");
 			ParseWarning(Character, ReplyParts::Type);
 			break;
 		default:
@@ -886,9 +1161,11 @@ void ZaberMaster::ParseCharacterForAlert(char Character)
 }
 void ZaberMaster::ParseCharacterForReply(char Character)
 {
+	//Serial.print('r');
 	switch(CurrentReplyPart)
 	{
 		case ReplyParts::Type:
+			//Serial.print('t');
 			ParseType(Character);
 			break;
 		case ReplyParts::Device:
@@ -917,9 +1194,16 @@ void ZaberMaster::ProcessAlertMessage()
 {
 	if (ReturnMessage.Type == MessageType::Alert)
 	{
-		if (ExpectingAlert[ReturnMessage.Device][ReturnMessage.Axis] == true)
+		//Serial.print("pa");
+		if (ReturnMessage.Device > 0)
 		{
-			ExpectingAlert[ReturnMessage.Device][ReturnMessage.Axis] = false;
+			if (ReturnMessage.Axis > 0)
+			{
+				//Serial.print("D");
+				//Serial.print(ReturnMessage.Device);
+				//Serial.print(ReturnMessage.Axis);
+				ExpectingAlert[ReturnMessage.Device - 1][ReturnMessage.Axis - 1] = false;
+			}
 		}
 		bool AlertsComplete = true;
 		for (uint8_t DeviceIndex = 0; DeviceIndex < ZaberMaxDevices; DeviceIndex++)
@@ -939,50 +1223,175 @@ void ZaberMaster::ProcessAlertMessage()
 		}
 		if (AlertsComplete)
 		{
-			if (MovementComplete != NULL)
+			if (Initializing)
 			{
-				MovementComplete();
+				//Serial.print("initd");
+				Initializing = false;
+				InitializationStep = 0;
+				if (InitializationComplete != NULL)
+				{
+					InitializationComplete();
+				}
 			}
-			if (InternalMovementComplete != NULL)
+			else
 			{
-				InternalMovementComplete();
+				if (MovementComplete != NULL)
+				{
+					MovementComplete(ReturnMessage.Device, ReturnMessage.Axis);
+				}
+			}
+		}
+	}
+}
+void ZaberMaster::RunNextInitializationStep()
+{
+	if (Initializing)
+	{
+		if (InitializationStep < InitializationStepsCount)
+		{
+			//Serial.print(" On step: ");
+			//Serial.println(InitializationStep);
+			CurrentCommand.Command = InitilizationSteps[InitializationStep].Command;
+			CurrentCommand.MessageComplete = InitilizationSteps[InitializationStep].MessageComplete;
+			CurrentCommand.MessageStarted = InitilizationSteps[InitializationStep].MessageStarted;
+			CurrentCommand.Axis = InitilizationSteps[InitializationStep].Axis;
+			CurrentCommand.Device = InitilizationSteps[InitializationStep].Device;
+			for (size_t ParameterIndex = 0; ParameterIndex < InitilizationSteps[InitializationStep].ParameterCount; ParameterIndex++)
+			{
+				CurrentCommand.Parameters[ParameterIndex].Type = InitilizationSteps[InitializationStep].Parameters[ParameterIndex].Type;
+				switch (CurrentCommand.Parameters[ParameterIndex].Type)
+				{
+				case CommandParameterType::None:
+					break;
+				case CommandParameterType::Integer:
+					CurrentCommand.Parameters[ParameterIndex].Value.Integer = InitilizationSteps[InitializationStep].Parameters[ParameterIndex].Value.Integer;
+					break;
+				case CommandParameterType::Float:
+					CurrentCommand.Parameters[ParameterIndex].Value.Float = InitilizationSteps[InitializationStep].Parameters[ParameterIndex].Value.Float;
+					break;
+				case CommandParameterType::Parameter:
+					CurrentCommand.Parameters[ParameterIndex].Value.Parameter = InitilizationSteps[InitializationStep].Parameters[ParameterIndex].Value.Parameter;
+					break;
+				case CommandParameterType::Setting:
+					CurrentCommand.Parameters[ParameterIndex].Value.Setting = InitilizationSteps[InitializationStep].Parameters[ParameterIndex].Value.Setting;
+					break;
+				default:
+					break;
+				}
+
+			}
+			if (CurrentCommand.Command == CommandMessageType::ToolsFindRange)
+			{
+				//Serial.print("ea");
+				for (size_t DeviceIndex = 0; DeviceIndex < DevicesFound; DeviceIndex++)
+				{
+					for (size_t AxisIndex = 0; AxisIndex < AxesFound[DeviceIndex]; AxisIndex++)
+					{
+						ExpectingAlert[DeviceIndex][AxisIndex] = true;
+					}
+				}
+			}
+			CurrentCommand.ParameterCount = InitilizationSteps[InitializationStep].ParameterCount;
+			SendCommand();
+		}
+		else
+		{
+			Initializing = false;
+			Initialized = true;
+			if (InitializationComplete != NULL)
+			{
+				InitializationComplete();
 			}
 		}
 	}
 }
 void ZaberMaster::ProcessReplyMessage()
 {
+	//Serial.print("rc");
 	if (ReturnMessage.Type == MessageType::Reply)
 	{
 		if (ExpectingReply)
 		{
 			ExpectingReply = false;
-			if (ReplyComplete != NULL)
-			{
-				ReplyComplete();
-			}
 			if (CurrentReceivedCallback != NULL)
 			{
 				(this->*CurrentReceivedCallback)();
+			}
+			if (Initializing)
+			{
+				if (InitializationStep < 3)
+				{
+					//Serial.print("rn");
+					InitializationStep++;
+					RunNextInitializationStep();
+				}
+			}
+			else
+			{
+				if (ReplyComplete != NULL)
+				{
+					ReplyComplete();
+				}
 			}
 		}
 	}
 }
 void ZaberMaster::ProcessGetReceived()
 {
-	if (CurrentCommand.ParameterCount > 1)
+	//Serial.print("gcb");
+	//Serial.print(CurrentCommand.ParameterCount);
+	if (CurrentCommand.ParameterCount > 0)
 	{
 		if (CurrentCommand.Parameters[0].Type == CommandParameterType::Parameter)
 		{
+			//Serial.print("pt");
 			if (CurrentCommand.Parameters[0].Value.Parameter == ParameterMessageType::Pos)
 			{
-				if (ReturnMessage.DataLength > 1)
+				if (ReturnMessage.DataLength == 1)
+				{
+					if (ReturnMessage.Device > 0)
+					{
+						LastPosition[ReturnMessage.Device - 1][ReturnMessage.Axis - 1] = ReturnMessage.Data[0].Value.Integer;
+					}
+				}
+				else if (ReturnMessage.DataLength > 1)
 				{
 					for (size_t CurrentParameterIndex = 0; CurrentParameterIndex < ReturnMessage.DataLength; CurrentParameterIndex++)
 					{
 						if (ReturnMessage.Data[CurrentParameterIndex].Type == ReplyDataType::Integer)
 						{
-							LastPosition[CurrentCommand.Device][CurrentParameterIndex] = ReturnMessage.Data[CurrentParameterIndex].Value.Integer;
+							if (ReturnMessage.Device > 0)
+							{
+								LastPosition[ReturnMessage.Device - 1][CurrentParameterIndex] = ReturnMessage.Data[CurrentParameterIndex].Value.Integer;
+							}
+						}
+					}
+				}
+			}
+		}
+		else if (CurrentCommand.Parameters[0].Type == CommandParameterType::Setting)
+		{
+			//Serial.print("st");
+			if (CurrentCommand.Parameters[0].Value.Setting == SettingMessageType::SystemAxisCount)
+			{
+				//Serial.print("ac");
+				//Serial.print(ReturnMessage.DataLength);
+				if (ReturnMessage.DataLength == 1)
+				{
+					if (ReturnMessage.Device > 0)
+					{
+						AxesFound[ReturnMessage.Device - 1] = ReturnMessage.Data[0].Value.Integer;
+						//Serial.print("af");
+						//Serial.print(AxesFound[ReturnMessage.Device - 1]);
+					}
+				}
+				else if (ReturnMessage.DataLength > 1)
+				{
+					for (size_t CurrentParameterIndex = 0; CurrentParameterIndex < ReturnMessage.DataLength; CurrentParameterIndex++)
+					{
+						if (ReturnMessage.Data[CurrentParameterIndex].Type == ReplyDataType::Integer)
+						{
+							AxesFound[CurrentParameterIndex] = ReturnMessage.Data[CurrentParameterIndex].Value.Integer;
 						}
 					}
 				}
@@ -990,9 +1399,54 @@ void ZaberMaster::ProcessGetReceived()
 		}
 	}
 }
+void ZaberMaster::ProcessRenumberReceived()
+{
+	if (DevicesFound < ReturnMessage.Device)
+	{
+		DevicesFound = ReturnMessage.Device;
+		//Serial.print("df");
+		//Serial.print(DevicesFound);
+	}
+}
 void ZaberMaster::ProcessMoveStarted()
 {
-	ExpectingAlert[CurrentCommand.Device][CurrentCommand.Axis] = true;
+	if (UseAlerts)
+	{
+		if (CurrentCommand.Device == 0)
+		{
+			if (CurrentCommand.Axis == 0)
+			{
+				for (size_t DeviceIndex = 0; DeviceIndex < DevicesFound; DeviceIndex++)
+				{
+					for (size_t AxisIndex = 0; AxisIndex < AxesFound[DeviceIndex]; AxisIndex++)
+					{
+						ExpectingAlert[DeviceIndex][AxisIndex] = true;
+					}
+				}
+			}
+			else
+			{
+				for (size_t DeviceIndex = 0; DeviceIndex < DevicesFound; DeviceIndex++)
+				{
+					ExpectingAlert[DeviceIndex][CurrentCommand.Axis - 1] = true;
+				}
+			}
+		}
+		else
+		{
+			if (CurrentCommand.Axis == 0)
+			{
+				for (size_t AxisIndex = 0; AxisIndex < AxesFound[CurrentCommand.Device - 1]; AxisIndex++)
+				{
+					ExpectingAlert[CurrentCommand.Device - 1][AxisIndex] = true;
+				}
+			}
+			else
+			{
+				ExpectingAlert[CurrentCommand.Device - 1][CurrentCommand.Axis - 1] = true;
+			}
+		}
+	}
 }
 void ZaberMaster::SendCommand()
 {
@@ -1007,14 +1461,21 @@ void ZaberMaster::SendCommand()
 	CurrentCommand.StartTime = micros();
 	memset(CommandBuffer,0,CommandBufferSize);
 	_HardwareSerial->write(CommandMarkerCharacter);
+	//Serial.print("Z:");
+	//Serial.print(CommandMarkerCharacter);
 	CharCount = IntToCharPointer(CurrentCommand.Device, CommandBuffer, CommandBufferSize);
 	_HardwareSerial->write(reinterpret_cast<const uint8_t*>(CommandBuffer),CharCount);
+	//Serial.write(reinterpret_cast<const uint8_t*>(CommandBuffer), CharCount);
 	_HardwareSerial->write(SpaceCharacter);
+	//Serial.write(SpaceCharacter);
 	memset(CommandBuffer,0,CommandBufferSize);
 	CharCount = IntToCharPointer(CurrentCommand.Axis, CommandBuffer, CommandBufferSize);
 	_HardwareSerial->write(reinterpret_cast<const uint8_t*>(CommandBuffer),CharCount);
+	//Serial.write(reinterpret_cast<const uint8_t*>(CommandBuffer), CharCount);
 	_HardwareSerial->write(SpaceCharacter);
+	//Serial.write(SpaceCharacter);
 	_HardwareSerial->write(StringToSend,CommandSize);
+	//Serial.write(StringToSend, CommandSize);
 	if (CurrentCommand.ParameterCount > 0)
 	{
 		for (uint8_t ParameterIndex = 0; ParameterIndex < CurrentCommand.ParameterCount; ParameterIndex++)
@@ -1027,30 +1488,42 @@ void ZaberMaster::SendCommand()
 				case CommandParameterType::Integer:
 				{
 					uint8_t CharCount = IntToCharPointer(CurrentCommand.Parameters[ParameterIndex].Value.Integer, CommandBuffer, CommandBufferSize);
+					_HardwareSerial->write(SpaceCharacter);
+					//Serial.write(SpaceCharacter);
 					_HardwareSerial->write(reinterpret_cast<const uint8_t*>(CommandBuffer),CharCount);
-					break;	
+					//Serial.write(reinterpret_cast<const uint8_t*>(CommandBuffer), CharCount);
+					break;
 				}
 				case CommandParameterType::Float:
 				{
 					uint8_t CharCount = FloatToCharPointer(CurrentCommand.Parameters[ParameterIndex].Value.Float, CommandBuffer, CommandBufferSize);
+					_HardwareSerial->write(SpaceCharacter);
+					//Serial.write(SpaceCharacter);
 					_HardwareSerial->write(reinterpret_cast<const uint8_t*>(CommandBuffer),CharCount);
-					break;	
+					//Serial.write(reinterpret_cast<const uint8_t*>(CommandBuffer), CharCount);
+					break;
 				}
 				case CommandParameterType::Parameter:
 				{
 					const uint8_t ParameterIdentifierIndex = static_cast<uint8_t>(CurrentCommand.Parameters[ParameterIndex].Value.Parameter);
 					const uint8_t* ParameterMessageString = reinterpret_cast<const uint8_t*>(ParameterIdentifier[ParameterIdentifierIndex].String);
 					const uint8_t StringCount = ParameterIdentifier[ParameterIdentifierIndex].Count;
+					_HardwareSerial->write(SpaceCharacter);
+					//Serial.write(SpaceCharacter);
 					_HardwareSerial->write(ParameterMessageString,StringCount);
-					break;	
+					//Serial.write(ParameterMessageString, StringCount);
+					break;
 				}
 				case CommandParameterType::Setting:
 				{
 					const uint8_t SettingIdentifierIndex = static_cast<uint8_t>(CurrentCommand.Parameters[ParameterIndex].Value.Setting);
 					const uint8_t* SettingMessageString = reinterpret_cast<const uint8_t*>(SettingIdentifier[SettingIdentifierIndex].String);
 					const uint8_t StringCount = SettingIdentifier[SettingIdentifierIndex].Count;
+					_HardwareSerial->write(SpaceCharacter);
+					//Serial.write(SpaceCharacter);
 					_HardwareSerial->write(SettingMessageString,StringCount);
-					break;	
+					//Serial.write(SettingMessageString, StringCount);
+					break;
 				}
 				default:
 					break;
@@ -1058,6 +1531,9 @@ void ZaberMaster::SendCommand()
 		}
 	}
 	_HardwareSerial->write(EndOfLineCharacter);
+	//Serial.write('\n');
+	ExpectingReply = true;
+	ResetReturnMessage();
 	if (CurrentSentCallback != NULL)
 	{
 		(this->*CurrentSentCallback)();
@@ -1078,6 +1554,7 @@ void ZaberMaster::ResetReturnMessage()
 }
 void ZaberMaster::FailToParse()
 {
+	//Serial.print("!fp!");
 	ClearReturnBuffer();
 	ResetReturnMessage();
 	CurrentReplyPart = ReplyParts::Type;
