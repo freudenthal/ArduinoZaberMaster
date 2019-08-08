@@ -1199,9 +1199,11 @@ void ZaberMaster::ProcessAlertMessage()
 		{
 			if (ReturnMessage.Axis > 0)
 			{
-				//Serial.print("D");
+				//Serial.print("D:");
 				//Serial.print(ReturnMessage.Device);
+				//Serial.print(":");
 				//Serial.print(ReturnMessage.Axis);
+				//Serial.print(";\n");
 				ExpectingAlert[ReturnMessage.Device - 1][ReturnMessage.Axis - 1] = false;
 			}
 		}
