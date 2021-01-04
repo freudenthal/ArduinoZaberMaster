@@ -473,6 +473,8 @@ class ZaberMaster
 		bool SendGetPosition(uint8_t Device, uint8_t Axis);
 		bool SendGetAxes(uint8_t Device);
 		bool GetPosition(uint8_t Device, uint8_t Axis, uint32_t* Position);
+		bool GetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t* Position);
+		bool GetIsBusy(uint8_t Device, uint8_t Axis, bool* IsBusy);
 		void SetInitializationCompleteCallback(ZaberFinishedListener _InitializationComplete);
 		void SetMovementCompleteCallback(ZaberFinishedListenerDeviceAxis _MovementComplete);
 		void SetReplyCompleteCallback(ZaberFinishedListener _ReplyComplete);
@@ -492,6 +494,8 @@ class ZaberMaster
 		bool UseAlerts;
 		bool ExpectingAlert[ZaberMaxDevices][ZaberMaxAxes];
 		uint32_t LastPosition[ZaberMaxDevices][ZaberMaxAxes];
+		uint32_t LastMaxSpeed[ZaberMaxDevices][ZaberMaxAxes];
+		StatusType LastStatus[ZaberMaxDevices][ZaberMaxAxes];
 		ZaberFinishedListenerDeviceAxis MovementComplete;
 		ZaberFinishedListener ReplyComplete;
 		ZaberFinishedListener InitializationComplete;

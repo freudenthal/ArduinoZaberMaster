@@ -719,7 +719,37 @@ bool ZaberMaster::GetPosition(uint8_t Device, uint8_t Axis, uint32_t* Position)
 		{
 			if (Axis < AxesFound[Device])
 			{
-				*Position = LastPosition[Device][Axis];
+				*Position = LastPosition[Device-1][Axis-1];
+				return true;
+			}
+		}
+	}
+	return false;
+}
+bool ZaberMaster::GetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t* Position)
+{
+	if (Device < ZaberMaxDevices && Axis < ZaberMaxAxes)
+	{
+		if (Device < DevicesFound)
+		{
+			if (Axis < AxesFound[Device])
+			{
+				*Position = LastMaxSpeed[Device-1][Axis-1];
+				return true;
+			}
+		}
+	}
+	return false;
+}
+bool ZaberMaster::GetIsBusy(uint8_t Device, uint8_t Axis, bool* IsBusy)
+{
+	if (Device < ZaberMaxDevices && Axis < ZaberMaxAxes)
+	{
+		if (Device < DevicesFound)
+		{
+			if (Axis < AxesFound[Device])
+			{
+				*IsBusy = LastStatus[Device-1][Axis-1] == StatusType::Busy;
 				return true;
 			}
 		}
@@ -1309,7 +1339,10 @@ void ZaberMaster::RunNextInitializationStep()
 }
 void ZaberMaster::ProcessReplyMessage()
 {
-	//Serial.print("rc");
+	if ( (ReturnMessage.Device > 0) && (ReturnMessage.Axis > 0) )
+	{
+		LastStatus[ReturnMessage.Device - 1][ReturnMessage.Axis - 1] = ReturnMessage.Status;
+	}
 	if (ReturnMessage.Type == MessageType::Reply)
 	{
 		if (ExpectingReply)
@@ -1394,6 +1427,29 @@ void ZaberMaster::ProcessGetReceived()
 						if (ReturnMessage.Data[CurrentParameterIndex].Type == ReplyDataType::Integer)
 						{
 							AxesFound[CurrentParameterIndex] = ReturnMessage.Data[CurrentParameterIndex].Value.Integer;
+						}
+					}
+				}
+			}
+			if (CurrentCommand.Parameters[0].Value.Setting == SettingMessageType::MaxSpeed)
+			{
+				if (ReturnMessage.DataLength == 1)
+				{
+					if (ReturnMessage.Device > 0)
+					{
+						LastMaxSpeed[ReturnMessage.Device - 1][ReturnMessage.Axis - 1] = ReturnMessage.Data[0].Value.Integer;
+					}
+				}
+				else if (ReturnMessage.DataLength > 1)
+				{
+					for (size_t CurrentParameterIndex = 0; CurrentParameterIndex < ReturnMessage.DataLength; CurrentParameterIndex++)
+					{
+						if (ReturnMessage.Data[CurrentParameterIndex].Type == ReplyDataType::Integer)
+						{
+							if (ReturnMessage.Device > 0)
+							{
+								LastMaxSpeed[ReturnMessage.Device - 1][CurrentParameterIndex] = ReturnMessage.Data[CurrentParameterIndex].Value.Integer;
+							}
 						}
 					}
 				}
