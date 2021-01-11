@@ -13,11 +13,11 @@ Zaber master controller. Takes a serial bus and controls a Zaber bus.
 #define ZaberMaxReplyData 4
 #define ZaberMaxDevices 1
 #define ZaberMaxAxes 2
-#define ZabberCommandParameterStringMaxLength 
 #define CommandBufferSize 24
 #define ReturnBufferSize 24
 #define ZaberParameterMaxLength 5
 #define ZaberDefaultSpeed 250000
+#define ZaberQueueCount 4
 
 typedef void ( *ZaberFinishedListener )();
 typedef void ( *ZaberFinishedListenerDeviceAxis )(uint8_t Device, uint8_t Axis);
@@ -149,7 +149,8 @@ class ZaberMaster
 			TriggerTime,
 			Virtual,
 			Warnings,
-			Count
+			Count,
+			None
 		};
 		enum class SettingMessageType : uint8_t 
 		{
@@ -338,6 +339,13 @@ class ZaberMaster
 			All,
 			Count
 		};
+		enum class ModeType : uint8_t
+		{
+			Inactive,
+			Idle,
+			WaitForCommandReply,
+			WaitForAlert,
+		};
 		struct CommandString
 		{
 			CommandMessageType Command;
@@ -376,13 +384,11 @@ class ZaberMaster
 		struct CommandMessage
 		{
 			CommandMessageType Command;
-			bool MessageComplete;
-			bool MessageStarted;
 			uint8_t Axis;
 			uint8_t Device;
-			uint32_t StartTime;
 			CommandParameter Parameters[ZaberParameterMaxLength];
 			uint8_t ParameterCount;
+			ZaberFinishedListener Callback;
 		};
 		struct ReplyDataError
 		{
@@ -480,9 +486,11 @@ class ZaberMaster
 		void SetMovementCompleteCallback(ZaberFinishedListenerDeviceAxis _MovementComplete);
 		void SetReplyCompleteCallback(ZaberFinishedListener _ReplyComplete);
 		void SetVerbose(bool VerboseToSet);
-		void CheckSerial();
+		void Check();
 	private:
 		HardwareSerial* _HardwareSerial;
+		ModeType Mode;
+		bool Busy;
 		bool Initializing;
 		bool Initialized;
 		uint8_t InitializationStep;
@@ -490,10 +498,6 @@ class ZaberMaster
 		uint8_t AxesFound[ZaberMaxDevices];
 		CommandMessage CurrentCommand;
 		char CommandBuffer[CommandBufferSize];
-		uint32_t LastTransmitionTime;
-		bool SendingCommand;
-		bool ExpectingReply;
-		bool UseAlerts;
 		bool ExpectingAlert[ZaberMaxDevices][ZaberMaxAxes];
 		uint32_t LastPosition[ZaberMaxDevices][ZaberMaxAxes];
 		uint32_t LastMaxSpeed[ZaberMaxDevices][ZaberMaxAxes];
@@ -511,8 +515,25 @@ class ZaberMaster
 		bool ReturnMessageDataTypeDetermined;
 		ReplyParts CurrentReplyPart;
 		bool RecievingReply;
-		uint32_t RecieveStartTime;
 		bool Verbose;
+
+		CommandMessage CommandQueue[ZaberQueueCount];
+		CommandMessage CommandForEnqueue;
+		uint8_t CommandQueueHead;
+		uint8_t CommandQueueTail;
+		bool CommandQueueFullFlag;
+
+		void CheckCommandQueue();
+		void ClearCommandQueue();
+		bool CommandQueueFull();
+		bool CommandQueueEmpty();
+		uint8_t CommandQueueCount();
+		void CommandQueueAdvance();
+		void CommandQueueRetreat();
+		void CommandEnqueue();
+		bool CommandQueuePullToCurrentCommand();
+		void CheckSerial();
+
 		void ParseCharacterForReply(char Character);
 		void ParseCharacterForAlert(char Character);
 		void ParseType(char Character);
@@ -535,10 +556,14 @@ class ZaberMaster
 		void ProcessMoveStarted();
 		void RunNextInitializationStep();
 		void SetExpectingAlerts(uint8_t Device, uint8_t Axis);
+		bool CheckExpectingAlert();
 		uint8_t IntToCharPointer(uint32_t Input, char* Buffer, size_t BufferSize);
 		uint8_t FloatToCharPointer(float Input, char* Buffer, size_t BufferSize);
 		uint8_t CharPointerToInt(char* Buffer, size_t BufferSize);
 		float CharPointerToFloat(char* Buffer, size_t BufferSize);
+		void ClearCommandForEnqueue();
+		void ClearCurrentCommand();
+		
 		static const char CarriageReturnCharacter;
 		static const char EndOfLineCharacter;
 		static const char SpaceCharacter;
