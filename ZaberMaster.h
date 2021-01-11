@@ -17,7 +17,7 @@ Zaber master controller. Takes a serial bus and controls a Zaber bus.
 #define CommandBufferSize 24
 #define ReturnBufferSize 24
 #define ZaberParameterMaxLength 5
-#define ZaberMasterInitializationStepsCount 4
+#define ZaberDefaultSpeed 250000
 
 typedef void ( *ZaberFinishedListener )();
 typedef void ( *ZaberFinishedListenerDeviceAxis )(uint8_t Device, uint8_t Axis);
@@ -37,7 +37,8 @@ class ZaberMaster
 		{
 			Idle,
 			Busy,
-			Count
+			Count,
+			Unknown
 		};
 		enum class MessageParts : uint8_t 
 		{
@@ -473,11 +474,12 @@ class ZaberMaster
 		bool SendGetPosition(uint8_t Device, uint8_t Axis);
 		bool SendGetAxes(uint8_t Device);
 		bool GetPosition(uint8_t Device, uint8_t Axis, uint32_t* Position);
-		bool GetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t* Position);
-		bool GetIsBusy(uint8_t Device, uint8_t Axis, bool* IsBusy);
+		bool GetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t* MaxSpeed);
+		bool GetIsBusy(uint8_t Device, uint8_t Axis, StatusType* Status);
 		void SetInitializationCompleteCallback(ZaberFinishedListener _InitializationComplete);
 		void SetMovementCompleteCallback(ZaberFinishedListenerDeviceAxis _MovementComplete);
 		void SetReplyCompleteCallback(ZaberFinishedListener _ReplyComplete);
+		void SetVerbose(bool VerboseToSet);
 		void CheckSerial();
 	private:
 		HardwareSerial* _HardwareSerial;
@@ -502,12 +504,15 @@ class ZaberMaster
 		CommandSentCallback CurrentSentCallback;
 		ReplyReceivedCallback CurrentReceivedCallback;
 		char ReturnBuffer[ReturnBufferSize];
+		char VerboseBuffer[ReturnBufferSize];
+		uint8_t VerboseBufferIndex;
 		uint8_t ReturnBufferPosition;
 		ReplyMessage ReturnMessage;
 		bool ReturnMessageDataTypeDetermined;
 		ReplyParts CurrentReplyPart;
 		bool RecievingReply;
 		uint32_t RecieveStartTime;
+		bool Verbose;
 		void ParseCharacterForReply(char Character);
 		void ParseCharacterForAlert(char Character);
 		void ParseType(char Character);
@@ -518,10 +523,12 @@ class ZaberMaster
 		void ParseWarning(char Character, ReplyParts NextState);
 		void ParseData(char Character);
 		void ClearReturnBuffer();
+		void ClearVerboseBuffer();
 		void ResetReturnMessage();
 		void FailToParse();
 		void ProcessReplyMessage();
 		void ProcessAlertMessage();
+		void SetLastStatus();
 		void SendCommand();
 		void ProcessGetReceived();
 		void ProcessRenumberReceived();
@@ -537,7 +544,7 @@ class ZaberMaster
 		static const char SpaceCharacter;
 		static const char CommandMarkerCharacter;
 		static const char GetCharacter;
-		static const uint8_t InitializationStepsCount = ZaberMasterInitializationStepsCount;
+		static const uint8_t InitializationStepsCount;
 		static const CommandMessage InitilizationSteps[];
 		static const CommandString CommandIdentifier[];
 		static const ParameterMessageString ParameterIdentifier[];
