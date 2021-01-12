@@ -14,18 +14,18 @@ Zaber master controller. Takes a serial bus and controls a Zaber bus.
 #define ZaberMaxDevices 1
 #define ZaberMaxAxes 2
 #define CommandBufferSize 24
-#define ReturnBufferSize 24
+#define ReturnBufferSize 48
 #define ZaberParameterMaxLength 5
 #define ZaberDefaultSpeed 250000
 #define ZaberQueueCount 4
 
 typedef void ( *ZaberFinishedListener )();
 typedef void ( *ZaberFinishedListenerDeviceAxis )(uint8_t Device, uint8_t Axis);
+typedef void ( *ZaberCommandSentCallback )();
+typedef void ( *ZaberReplyReceivedCallback )();
 class ZaberMaster
 {
 	public:
-		typedef void(ZaberMaster::*CommandSentCallback)();
-		typedef void(ZaberMaster::*ReplyReceivedCallback)();
 		enum class MessageType : uint8_t 
 		{
 			Reply,
@@ -118,6 +118,7 @@ class ZaberMaster
 			Float,
 			Integer,
 			Error,
+			Warning,
 			Count
 		};
 		enum class CommandMessageType : uint8_t 
@@ -352,8 +353,8 @@ class ZaberMaster
 			const char* String;
 			size_t Count;
 			CommandScope Scope;
-			const CommandSentCallback SentCallback;
-			const ReplyReceivedCallback ReceivedCallback;
+			ZaberCommandSentCallback SentCallback;
+			ZaberReplyReceivedCallback ReceivedCallback;
 		};
 		struct ParameterMessageString
 		{
@@ -428,6 +429,7 @@ class ZaberMaster
 		{
 			float Float;
 			int32_t Integer;
+			WarningType Warning;
 			ReplyDataErrorType Error;
 		};
 		struct ReplyData
@@ -451,119 +453,121 @@ class ZaberMaster
 		};
 		ZaberMaster(HardwareSerial* serial); //Invoke with ZaberMaster(&SerialN);
 		~ZaberMaster();
-		bool Initialize();
-		bool SendRenumber();
-		bool SendEStop(uint8_t Device, uint8_t Axis);
-		bool SendStop(uint8_t Device, uint8_t Axis);
-		bool SendHome(uint8_t Device, uint8_t Axis);
-		bool SendSystemReset(uint8_t Device);
-		bool SendSystemRestore(uint8_t Device);
-		bool SendClearWarnings(uint8_t Device);
-		bool SendFindRange(uint8_t Device, uint8_t Axis);
-		bool SendMoveRel(uint8_t Device, uint8_t Axis, uint32_t Steps);
-		bool SendMoveAbs(uint8_t Device, uint8_t Axis, uint32_t Steps);
-		bool SendSetAcceleration(uint8_t Device, uint8_t Axis, uint32_t Acceleration);
-		bool SendGetAcceleration(uint8_t Device, uint8_t Axis);
-		bool SendSetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t MaxSpeed);
-		bool SendGetMaxSpeed(uint8_t Device, uint8_t Axis);
-		bool SendSetLimitMax(uint8_t Device, uint8_t Axis, uint32_t LimitMax);
-		bool SendGetLimitMax(uint8_t Device, uint8_t Axis);
-		bool SendSetLimitMin(uint8_t Device, uint8_t Axis, uint32_t LimitMin);
-		bool SendGetLimitMin(uint8_t Device, uint8_t Axis);
-		bool SendSetAlertStatus(uint8_t Device, bool Enable);
-		bool SendGetAlertStatus(uint8_t Device);
-		bool SendSetKnobEnable(uint8_t Device, uint8_t Axis, bool Enable);
-		bool SendGetKnobEnable(uint8_t Device, uint8_t Axis);
-		bool SendSetParked(uint8_t Device, uint8_t Axis, bool Enable);
-		bool SendSetResolution(uint8_t Device, uint8_t Axis, uint8_t Resolution);
-		bool SendGetResolution(uint8_t Device, uint8_t Axis);
-		bool SendGetPosition(uint8_t Device, uint8_t Axis);
-		bool SendGetAxes(uint8_t Device);
-		bool GetPosition(uint8_t Device, uint8_t Axis, uint32_t* Position);
-		bool GetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t* MaxSpeed);
-		bool GetIsBusy(uint8_t Device, uint8_t Axis, StatusType* Status);
-		void SetInitializationCompleteCallback(ZaberFinishedListener _InitializationComplete);
-		void SetMovementCompleteCallback(ZaberFinishedListenerDeviceAxis _MovementComplete);
-		void SetReplyCompleteCallback(ZaberFinishedListener _ReplyComplete);
-		void SetVerbose(bool VerboseToSet);
-		void Check();
+		static bool Initialize();
+		static bool SendRenumber();
+		static bool SendEStop(uint8_t Device, uint8_t Axis);
+		static bool SendStop(uint8_t Device, uint8_t Axis);
+		static bool SendHome(uint8_t Device, uint8_t Axis);
+		static bool SendSystemReset(uint8_t Device);
+		static bool SendSystemRestore(uint8_t Device);
+		static bool SendClearWarnings(uint8_t Device);
+		static bool SendFindRange(uint8_t Device, uint8_t Axis);
+		static bool SendMoveRel(uint8_t Device, uint8_t Axis, uint32_t Steps);
+		static bool SendMoveAbs(uint8_t Device, uint8_t Axis, uint32_t Steps);
+		static bool SendSetAcceleration(uint8_t Device, uint8_t Axis, uint32_t Acceleration);
+		static bool SendGetAcceleration(uint8_t Device, uint8_t Axis);
+		static bool SendSetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t MaxSpeed);
+		static bool SendGetMaxSpeed(uint8_t Device, uint8_t Axis);
+		static bool SendSetLimitMax(uint8_t Device, uint8_t Axis, uint32_t LimitMax);
+		static bool SendGetLimitMax(uint8_t Device, uint8_t Axis);
+		static bool SendSetLimitMin(uint8_t Device, uint8_t Axis, uint32_t LimitMin);
+		static bool SendGetLimitMin(uint8_t Device, uint8_t Axis);
+		static bool SendSetAlertStatus(uint8_t Device, bool Enable);
+		static bool SendGetAlertStatus(uint8_t Device);
+		static bool SendSetKnobEnable(uint8_t Device, uint8_t Axis, bool Enable);
+		static bool SendGetKnobEnable(uint8_t Device, uint8_t Axis);
+		static bool SendSetParked(uint8_t Device, uint8_t Axis, bool Enable);
+		static bool SendSetResolution(uint8_t Device, uint8_t Axis, uint8_t Resolution);
+		static bool SendGetResolution(uint8_t Device, uint8_t Axis);
+		static bool SendGetPosition(uint8_t Device, uint8_t Axis);
+		static bool SendGetAxes(uint8_t Device);
+		static bool GetPosition(uint8_t Device, uint8_t Axis, uint32_t* Position);
+		static bool GetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t* MaxSpeed);
+		static bool GetIsBusy(uint8_t Device, uint8_t Axis, StatusType* Status);
+		static void SetInitializationCompleteCallback(ZaberFinishedListener _InitializationComplete);
+		static void SetMovementCompleteCallback(ZaberFinishedListenerDeviceAxis _MovementComplete);
+		static void SetReplyCompleteCallback(ZaberFinishedListener _ReplyComplete);
+		static void SetVerbose(bool VerboseToSet);
+		static void Check();
 	private:
-		HardwareSerial* _HardwareSerial;
-		ModeType Mode;
-		bool Busy;
-		bool Initializing;
-		bool Initialized;
-		uint8_t InitializationStep;
-		uint8_t DevicesFound;
-		uint8_t AxesFound[ZaberMaxDevices];
-		CommandMessage CurrentCommand;
-		char CommandBuffer[CommandBufferSize];
-		bool ExpectingAlert[ZaberMaxDevices][ZaberMaxAxes];
-		uint32_t LastPosition[ZaberMaxDevices][ZaberMaxAxes];
-		uint32_t LastMaxSpeed[ZaberMaxDevices][ZaberMaxAxes];
-		StatusType LastStatus[ZaberMaxDevices][ZaberMaxAxes];
-		ZaberFinishedListenerDeviceAxis MovementComplete;
-		ZaberFinishedListener ReplyComplete;
-		ZaberFinishedListener InitializationComplete;
-		CommandSentCallback CurrentSentCallback;
-		ReplyReceivedCallback CurrentReceivedCallback;
-		char ReturnBuffer[ReturnBufferSize];
-		char VerboseBuffer[ReturnBufferSize];
-		uint8_t VerboseBufferIndex;
-		uint8_t ReturnBufferPosition;
-		ReplyMessage ReturnMessage;
-		bool ReturnMessageDataTypeDetermined;
-		ReplyParts CurrentReplyPart;
-		bool RecievingReply;
-		bool Verbose;
+		static HardwareSerial* _HardwareSerial;
+		static ModeType Mode;
+		static bool Busy;
+		static bool Initializing;
+		static bool Initialized;
+		static uint8_t InitializationStep;
+		static uint8_t DevicesFound;
+		static uint8_t AxesFound[ZaberMaxDevices];
+		static CommandMessage CurrentCommand;
+		static char CommandBuffer[CommandBufferSize];
+		static bool ExpectingAlert[ZaberMaxDevices][ZaberMaxAxes];
+		static uint32_t LastPosition[ZaberMaxDevices][ZaberMaxAxes];
+		static uint32_t LastMaxSpeed[ZaberMaxDevices][ZaberMaxAxes];
+		static StatusType LastStatus[ZaberMaxDevices][ZaberMaxAxes];
+		static ZaberFinishedListenerDeviceAxis MovementComplete;
+		static ZaberFinishedListener ReplyComplete;
+		static ZaberFinishedListener InitializationComplete;
+		static ZaberCommandSentCallback CurrentSentCallback;
+		static ZaberReplyReceivedCallback CurrentReceivedCallback;
+		static char ReturnBuffer[ReturnBufferSize];
+		static char VerboseBuffer[ReturnBufferSize];
+		static uint8_t VerboseBufferIndex;
+		static uint8_t ReturnBufferPosition;
+		static ReplyMessage ReturnMessage;
+		static bool ReturnMessageDataTypeDetermined;
+		static ReplyParts CurrentReplyPart;
+		static bool RecievingReply;
+		static bool Verbose;
 
-		CommandMessage CommandQueue[ZaberQueueCount];
-		CommandMessage CommandForEnqueue;
-		uint8_t CommandQueueHead;
-		uint8_t CommandQueueTail;
-		bool CommandQueueFullFlag;
+		static CommandMessage CommandQueue[ZaberQueueCount];
+		static CommandMessage CommandForEnqueue;
+		static uint8_t CommandQueueHead;
+		static uint8_t CommandQueueTail;
+		static bool CommandQueueFullFlag;
 
-		void CheckCommandQueue();
-		void ClearCommandQueue();
-		bool CommandQueueFull();
-		bool CommandQueueEmpty();
-		uint8_t CommandQueueCount();
-		void CommandQueueAdvance();
-		void CommandQueueRetreat();
-		void CommandEnqueue();
-		bool CommandQueuePullToCurrentCommand();
-		void CheckSerial();
+		static void CheckCommandQueue();
+		static void ClearCommandQueue();
+		static bool CommandQueueFull();
+		static bool CommandQueueEmpty();
+		static uint8_t CommandQueueCount();
+		static void CommandQueueAdvance();
+		static void CommandQueueRetreat();
+		static void CommandEnqueue();
+		static bool CommandQueuePullToCurrentCommand();
+		static void CheckSerial();
 
-		void ParseCharacterForReply(char Character);
-		void ParseCharacterForAlert(char Character);
-		void ParseType(char Character);
-		void ParseDevice(char Character, ReplyParts NextState);
-		void ParseAxis(char Character, ReplyParts NextState);
-		void ParseFlag(char Character, ReplyParts NextState);
-		void ParseStatus(char Character, ReplyParts NextState);
-		void ParseWarning(char Character, ReplyParts NextState);
-		void ParseData(char Character);
-		void ClearReturnBuffer();
-		void ClearVerboseBuffer();
-		void ResetReturnMessage();
-		void FailToParse();
-		void ProcessReplyMessage();
-		void ProcessAlertMessage();
-		void SetLastStatus();
-		void SendCommand();
-		void ProcessGetReceived();
-		void ProcessRenumberReceived();
-		void ProcessMoveStarted();
-		void RunNextInitializationStep();
-		void SetExpectingAlerts(uint8_t Device, uint8_t Axis);
-		bool CheckExpectingAlert();
-		uint8_t IntToCharPointer(uint32_t Input, char* Buffer, size_t BufferSize);
-		uint8_t FloatToCharPointer(float Input, char* Buffer, size_t BufferSize);
-		uint8_t CharPointerToInt(char* Buffer, size_t BufferSize);
-		float CharPointerToFloat(char* Buffer, size_t BufferSize);
-		void ClearCommandForEnqueue();
-		void ClearCurrentCommand();
-		
+		static void ParseCharacterForReply(char Character);
+		static void ParseCharacterForAlert(char Character);
+		static void ParseType(char Character);
+		static void ParseDevice(char Character, ReplyParts NextState);
+		static void ParseAxis(char Character, ReplyParts NextState);
+		static void ParseFlag(char Character, ReplyParts NextState);
+		static void ParseStatus(char Character, ReplyParts NextState);
+		static void ParseWarning(char Character, ReplyParts NextState);
+		static void ParseData(char Character);
+		static void ClearReturnBuffer();
+		static void ClearVerboseBuffer();
+		static void ResetReturnMessage();
+		static void FailToParse();
+		static void ProcessReplyMessage();
+		static void ProcessAlertMessage();
+		static void SetLastStatus();
+		static void SendCommand();
+		static void RunNextInitializationStep();
+		static void SetExpectingAlerts(uint8_t Device, uint8_t Axis);
+		static bool CheckExpectingAlert();
+		static uint8_t IntToCharPointer(uint32_t Input, char* Buffer, size_t BufferSize);
+		static uint8_t FloatToCharPointer(float Input, char* Buffer, size_t BufferSize);
+		static uint8_t CharPointerToInt(char* Buffer, size_t BufferSize);
+		static float CharPointerToFloat(char* Buffer, size_t BufferSize);
+		static void ClearCommandForEnqueue();
+		static void ClearCurrentCommand();
+
+		static void ProcessMoveEnded();
+		static void ProcessGetReceived();
+		static void ProcessRenumberReceived();
+		static void ProcessMoveStarted();
+
 		static const char CarriageReturnCharacter;
 		static const char EndOfLineCharacter;
 		static const char SpaceCharacter;

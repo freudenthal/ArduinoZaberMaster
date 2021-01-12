@@ -26,7 +26,7 @@ const ZaberMaster::CommandString ZaberMaster::CommandIdentifier[]=
 	{CommandMessageType::Joystick,"joystick",8,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::Key,"key",3,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::LockStep,"lockstep",8,CommandScope::Device, NULL, NULL },
-	{CommandMessageType::Move,"move",4,CommandScope::Axis, &ZaberMaster::ProcessMoveStarted, NULL },
+	{CommandMessageType::Move,"move",4,CommandScope::Axis, &ZaberMaster::ProcessMoveStarted, &ZaberMaster::ProcessMoveEnded },
 	{CommandMessageType::Renumber,"renumber",8,CommandScope::Device, NULL, &ZaberMaster::ProcessRenumberReceived },
 	{CommandMessageType::Set,"set",3,CommandScope::Either, NULL, NULL },
 	{CommandMessageType::Stop,"stop",4,CommandScope::Axis, &ZaberMaster::ProcessMoveStarted, NULL },
@@ -34,8 +34,8 @@ const ZaberMaster::CommandString ZaberMaster::CommandIdentifier[]=
 	{CommandMessageType::SystemReset,"system reset",12,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::SystemRestore,"system restore",14,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::ToolsEcho,"tools echo",10,CommandScope::Device, NULL, NULL },
-	{CommandMessageType::ToolsFindRange,"tools findrange",15,CommandScope::Axis, &ZaberMaster::ProcessMoveStarted, NULL },
-	{CommandMessageType::ToolsGoToLimit,"tools gotolimit",15,CommandScope::Axis, &ZaberMaster::ProcessMoveStarted, NULL },
+	{CommandMessageType::ToolsFindRange,"tools findrange",15,CommandScope::Axis, &ZaberMaster::ProcessMoveStarted, &ZaberMaster::ProcessMoveEnded },
+	{CommandMessageType::ToolsGoToLimit,"tools gotolimit",15,CommandScope::Axis, &ZaberMaster::ProcessMoveStarted, &ZaberMaster::ProcessMoveEnded },
 	{CommandMessageType::ToolsParking,"tools parking",13,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::ToolsSetComm,"tools setcomm",13,CommandScope::Device, NULL, NULL },
 	{CommandMessageType::ToolsStorePos,"tools storepos",14,CommandScope::Axis, NULL, NULL },
@@ -265,6 +265,41 @@ const ZaberMaster::Warning ZaberMaster::WarningIdentifier[]=
 	{WarningType::JoystickCalibrating, "NJ", "Joystick calibrating", 20, false, false}
 };
 
+HardwareSerial* ZaberMaster::_HardwareSerial;
+ZaberMaster::ModeType ZaberMaster::Mode;
+bool ZaberMaster::Busy;
+bool ZaberMaster::Initializing;
+bool ZaberMaster::Initialized;
+uint8_t ZaberMaster::InitializationStep;
+uint8_t ZaberMaster::DevicesFound;
+uint8_t ZaberMaster::AxesFound[ZaberMaxDevices];
+ZaberMaster::CommandMessage ZaberMaster::CurrentCommand;
+char ZaberMaster::CommandBuffer[CommandBufferSize];
+bool ZaberMaster::ExpectingAlert[ZaberMaxDevices][ZaberMaxAxes];
+uint32_t ZaberMaster::LastPosition[ZaberMaxDevices][ZaberMaxAxes];
+uint32_t ZaberMaster::LastMaxSpeed[ZaberMaxDevices][ZaberMaxAxes];
+ZaberMaster::StatusType ZaberMaster::LastStatus[ZaberMaxDevices][ZaberMaxAxes];
+char ZaberMaster::ReturnBuffer[ReturnBufferSize];
+char ZaberMaster::VerboseBuffer[ReturnBufferSize];
+uint8_t ZaberMaster::VerboseBufferIndex;
+uint8_t ZaberMaster::ReturnBufferPosition;
+ZaberMaster::ReplyMessage ZaberMaster::ReturnMessage;
+bool ZaberMaster::ReturnMessageDataTypeDetermined;
+ZaberMaster::ReplyParts ZaberMaster::CurrentReplyPart;
+bool ZaberMaster::RecievingReply;
+bool ZaberMaster::Verbose;
+ZaberMaster::CommandMessage ZaberMaster::CommandQueue[ZaberQueueCount];
+ZaberMaster::CommandMessage ZaberMaster::CommandForEnqueue;
+uint8_t ZaberMaster::CommandQueueHead;
+uint8_t ZaberMaster::CommandQueueTail;
+bool ZaberMaster::CommandQueueFullFlag;
+
+ZaberFinishedListenerDeviceAxis ZaberMaster::MovementComplete;
+ZaberFinishedListener ZaberMaster::ReplyComplete;
+ZaberFinishedListener ZaberMaster::InitializationComplete;
+ZaberCommandSentCallback ZaberMaster::CurrentSentCallback;
+ZaberReplyReceivedCallback ZaberMaster::CurrentReceivedCallback;
+
 ZaberMaster::ZaberMaster(HardwareSerial* serial)
 {
 	_HardwareSerial = serial;
@@ -365,7 +400,6 @@ bool ZaberMaster::SendHome(uint8_t Device, uint8_t Axis)
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
 	CommandForEnqueue.ParameterCount = 0;
-	SetExpectingAlerts(Device, Axis);
 	CommandEnqueue();
 	return true;
 }
@@ -404,7 +438,6 @@ bool ZaberMaster::SendFindRange(uint8_t Device, uint8_t Axis)
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
 	CommandForEnqueue.ParameterCount = 0;
-	SetExpectingAlerts(Device, Axis);
 	CommandEnqueue();
 	return true;
 }
@@ -418,7 +451,6 @@ bool ZaberMaster::SendMoveRel(uint8_t Device, uint8_t Axis, uint32_t Steps)
 	CommandForEnqueue.Parameters[1].Type = CommandParameterType::Integer;
 	CommandForEnqueue.Parameters[1].Value.Integer = Steps;
 	CommandForEnqueue.ParameterCount = 2;
-	SetExpectingAlerts(Device, Axis);
 	CommandEnqueue();
 	return true;
 }
@@ -432,7 +464,6 @@ bool ZaberMaster::SendMoveAbs(uint8_t Device, uint8_t Axis, uint32_t Steps)
 	CommandForEnqueue.Parameters[1].Type = CommandParameterType::Integer;
 	CommandForEnqueue.Parameters[1].Value.Integer = Steps;
 	CommandForEnqueue.ParameterCount = 2;
-	SetExpectingAlerts(Device, Axis);
 	CommandEnqueue();
 	return true;
 }
@@ -721,37 +752,6 @@ void ZaberMaster::ClearCommandQueue()
 		{
 			CommandQueue[QueueIndex].Parameters[Index].Type = CommandParameterType::None;
 			CommandQueue[QueueIndex].Parameters[Index].Value.Integer = 0;
-		}
-	}
-}
-void ZaberMaster::SetExpectingAlerts(uint8_t Device, uint8_t Axis)
-{
-	if (Device > 0)
-	{
-		if (Axis > 0)
-		{
-			ExpectingAlert[Device - 1][Axis - 1] = true;
-		}
-	}
-	else
-	{
-		if (Axis > 0)
-		{
-			for (size_t DeviceIndex = 0; DeviceIndex < DevicesFound; DeviceIndex++)
-			{
-				ExpectingAlert[DeviceIndex][Axis - 1] = true;
-			}
-		}
-		else
-		{
-			for (size_t DeviceIndex = 0; DeviceIndex < DevicesFound; DeviceIndex++)
-			{
-				for (size_t AxisIndex = 0; AxisIndex < AxesFound[DeviceIndex]; AxisIndex++)
-				{
-					ExpectingAlert[DeviceIndex][Axis - 1] = true;
-				}
-				ExpectingAlert[DeviceIndex][Axis - 1] = true;
-			}
 		}
 	}
 }
@@ -1187,6 +1187,7 @@ void ZaberMaster::ParseWarning(char Character, ReplyParts NextState)
 			{
 				ReturnMessage.Warning = WarningIdentifier[Index].Type;
 				Found = true;
+				break;
 			}
 		}
 		ClearReturnBuffer();
@@ -1214,17 +1215,107 @@ void ZaberMaster::ParseData(char Character)
 {
 	if (ReturnMessage.Flag == FlagType::Okay)
 	{
-		if (isdigit(Character) || Character == '.')
+		if (CurrentCommand.Command == CommandMessageType::Warnings)
 		{
-			if (Character == '.')
+			if (ReturnMessageDataTypeDetermined)
 			{
-				if (ReturnMessageDataTypeDetermined)
+				if (isalpha(Character))
 				{
-					FailToParse();
+					ReturnBuffer[ReturnBufferPosition] = Character;
+					if (ReturnBufferPosition < ReturnBufferSize)
+					{
+						ReturnBufferPosition++;
+					}
+				}
+				else if (Character == SpaceCharacter)
+				{
+					ReturnBuffer[ReturnBufferPosition] = '\0';
+					bool Found = false;
+					for (uint8_t Index = 0; Index < static_cast<uint8_t>(WarningType::Count); Index++)
+					{
+						if ( strcmp(ReturnBuffer, WarningIdentifier[Index].Flag) == 0 )
+						{
+							ReturnMessage.Warning = WarningIdentifier[Index].Type;
+							Found = true;
+							break;
+						}
+					}
+					ClearReturnBuffer();
+					if (Found)
+					{
+						ReturnMessage.Data[ReturnMessage.DataLength].Type = ReplyDataType::Warning;
+						ReturnMessage.Data[ReturnMessage.DataLength].Value.Warning = ReturnMessage.Warning;
+						if (ReturnMessage.DataLength < (ZaberMaxReplyData-1) )
+						{
+							ReturnMessage.DataLength++;
+						}
+					}
+				}
+				else if (Character == CarriageReturnCharacter || Character == EndOfLineCharacter)
+				{
+					ReturnMessageDataTypeDetermined = false;
+					ClearReturnBuffer();
+					CurrentReplyPart = ReplyParts::Type;
+					ReturnMessage.MessageComplete = true;
+					ProcessReplyMessage();
 				}
 				else
 				{
+					FailToParse();
+				}
+			}
+			else
+			{
+				if (isdigit(Character))
+				{
+					ReturnBuffer[ReturnBufferPosition] = Character;
+					if (ReturnBufferPosition < ReturnBufferSize)
+					{
+						ReturnBufferPosition++;
+					}
+				}
+				else if (Character == SpaceCharacter)
+				{
+					ReturnBuffer[ReturnBufferPosition] = '\0';
 					ReturnMessageDataTypeDetermined = true;
+					ClearReturnBuffer();
+				}
+				else if (Character == CarriageReturnCharacter || Character == EndOfLineCharacter)
+				{
+					ReturnMessageDataTypeDetermined = false;
+					ClearReturnBuffer();
+					CurrentReplyPart = ReplyParts::Type;
+					ReturnMessage.MessageComplete = true;
+					ProcessReplyMessage();
+				}
+				else
+				{
+					FailToParse();
+				}
+			}
+		}
+		else
+		{
+			if (isdigit(Character) || Character == '.')
+			{
+				if (Character == '.')
+				{
+					if (ReturnMessageDataTypeDetermined)
+					{
+						FailToParse();
+					}
+					else
+					{
+						ReturnMessageDataTypeDetermined = true;
+						ReturnBuffer[ReturnBufferPosition] = Character;
+						if (ReturnBufferPosition < ReturnBufferSize)
+						{
+							ReturnBufferPosition++;
+						}
+					}
+				}
+				else
+				{
 					ReturnBuffer[ReturnBufferPosition] = Character;
 					if (ReturnBufferPosition < ReturnBufferSize)
 					{
@@ -1232,44 +1323,36 @@ void ZaberMaster::ParseData(char Character)
 					}
 				}
 			}
+			else if (Character == CarriageReturnCharacter || Character == EndOfLineCharacter || Character == SpaceCharacter)
+			{
+				if (ReturnMessage.DataLength < (ZaberMaxReplyData-1) )
+				{
+					if (ReturnMessageDataTypeDetermined)
+					{
+						ReturnMessage.Data[ReturnMessage.DataLength].Type = ReplyDataType::Float;
+						ReturnMessage.Data[ReturnMessage.DataLength].Value.Float = CharPointerToFloat(ReturnBuffer, ReturnBufferSize);
+					}
+					else
+					{
+						ReturnBuffer[ReturnBufferPosition] = '\0';
+						ReturnMessage.Data[ReturnMessage.DataLength].Type = ReplyDataType::Integer;
+						ReturnMessage.Data[ReturnMessage.DataLength].Value.Integer = (int32_t)atoi(ReturnBuffer);
+					}
+					ReturnMessage.DataLength++;
+				}
+				ReturnMessageDataTypeDetermined = false;
+				ClearReturnBuffer();
+				if (Character != SpaceCharacter)
+				{
+					CurrentReplyPart = ReplyParts::Type;
+					ReturnMessage.MessageComplete = true;
+					ProcessReplyMessage();
+				}
+			}
 			else
 			{
-				ReturnBuffer[ReturnBufferPosition] = Character;
-				if (ReturnBufferPosition < ReturnBufferSize)
-				{
-					ReturnBufferPosition++;
-				}
+				FailToParse();
 			}
-		}
-		else if (Character == CarriageReturnCharacter || Character == EndOfLineCharacter || Character == SpaceCharacter)
-		{
-			if (ReturnMessage.DataLength < 3)
-			{
-				if (ReturnMessageDataTypeDetermined)
-				{
-					ReturnMessage.Data[ReturnMessage.DataLength].Type = ReplyDataType::Float;
-					ReturnMessage.Data[ReturnMessage.DataLength].Value.Float = CharPointerToFloat(ReturnBuffer, ReturnBufferSize);
-				}
-				else
-				{
-					ReturnBuffer[ReturnBufferPosition] = '\0';
-					ReturnMessage.Data[ReturnMessage.DataLength].Type = ReplyDataType::Integer;
-					ReturnMessage.Data[ReturnMessage.DataLength].Value.Integer = (int32_t)atoi(ReturnBuffer);
-				}
-				ReturnMessage.DataLength++;
-			}
-			ReturnMessageDataTypeDetermined = false;
-			ClearReturnBuffer();
-			if (Character != SpaceCharacter)
-			{
-				CurrentReplyPart = ReplyParts::Type;
-				ReturnMessage.MessageComplete = true;
-				ProcessReplyMessage();
-			}
-		}
-		else
-		{
-			FailToParse();
 		}
 	}
 	else
@@ -1493,7 +1576,7 @@ void ZaberMaster::ProcessReplyMessage()
 		{
 			if (CurrentReceivedCallback != NULL)
 			{
-				(this->*CurrentReceivedCallback)();
+				CurrentReceivedCallback();
 			}
 			if (Initializing)
 			{
@@ -1529,7 +1612,19 @@ void ZaberMaster::ProcessReplyMessage()
 		Serial.print("<STAGE>(Error: ");
 		Serial.print(WarningIdentifier[static_cast<uint8_t>(ReturnMessage.Warning)].String);
 		Serial.print(")\n");
-		SendClearWarnings(ReturnMessage.Device);
+		//SendClearWarnings(ReturnMessage.Device);
+	}
+}
+void ZaberMaster::ProcessMoveEnded()
+{
+	SendGetPosition(CurrentCommand.Device,CurrentCommand.Axis);
+	if (Verbose)
+	{
+		Serial.print("<ZABER>(Updating position: ");
+		Serial.print(CurrentCommand.Device);
+		Serial.print(",");
+		Serial.print(CurrentCommand.Axis);
+		Serial.print(")\n");
 	}
 }
 void ZaberMaster::ProcessGetReceived()
@@ -1540,24 +1635,53 @@ void ZaberMaster::ProcessGetReceived()
 		{
 			if (CurrentCommand.Parameters[0].Value.Parameter == ParameterMessageType::Pos)
 			{
+				if (Verbose)
+				{
+					Serial.print("<ZABER>(Pos update: ");
+				}
 				if (ReturnMessage.DataLength == 1)
 				{
 					if (ReturnMessage.Device > 0)
 					{
 						LastPosition[ReturnMessage.Device - 1][ReturnMessage.Axis - 1] = ReturnMessage.Data[0].Value.Integer;
+						if (Verbose)
+						{
+							Serial.print(ReturnMessage.Device);
+							Serial.print(",");
+							Serial.print(ReturnMessage.Axis);
+							Serial.print(",");
+							Serial.print(LastPosition[ReturnMessage.Device - 1][ReturnMessage.Axis - 1]);
+							Serial.print(")\n");
+						}
 					}
 				}
 				else if (ReturnMessage.DataLength > 1)
 				{
+					if (Verbose)
+					{
+						Serial.print(ReturnMessage.Device);
+						Serial.print(",");
+					}
 					for (size_t CurrentParameterIndex = 0; CurrentParameterIndex < ReturnMessage.DataLength; CurrentParameterIndex++)
 					{
+						
 						if (ReturnMessage.Data[CurrentParameterIndex].Type == ReplyDataType::Integer)
 						{
 							if (ReturnMessage.Device > 0)
 							{
 								LastPosition[ReturnMessage.Device - 1][CurrentParameterIndex] = ReturnMessage.Data[CurrentParameterIndex].Value.Integer;
+								if (Verbose)
+								{
+									Serial.print(CurrentParameterIndex + 1);
+									Serial.print(",");
+									Serial.print(LastPosition[ReturnMessage.Device - 1][CurrentParameterIndex]);
+								}
 							}
 						}
+					}
+					if (Verbose)
+					{
+						Serial.print(")\n");
 					}
 				}
 			}
@@ -1652,6 +1776,14 @@ void ZaberMaster::ProcessMoveStarted()
 		{
 			ExpectingAlert[CurrentCommand.Device - 1][CurrentCommand.Axis - 1] = true;
 		}
+	}
+	if (Verbose)
+	{
+		Serial.print("<ZABER>(Expect alert: ");
+		Serial.print(CurrentCommand.Device);
+		Serial.print(",");
+		Serial.print(CurrentCommand.Axis);
+		Serial.print(")\n");
 	}
 }
 void ZaberMaster::SendCommand()
@@ -1760,7 +1892,7 @@ void ZaberMaster::SendCommand()
 	Mode = ModeType::WaitForCommandReply;
 	if (CurrentSentCallback != NULL)
 	{
-		(this->*CurrentSentCallback)();
+		CurrentSentCallback();
 	}
 }
 void ZaberMaster::ClearReturnBuffer()
@@ -1790,5 +1922,6 @@ void ZaberMaster::FailToParse()
 	}
 	ClearReturnBuffer();
 	ResetReturnMessage();
+	Mode = ModeType::Idle;
 	CurrentReplyPart = ReplyParts::Type;
 }
