@@ -23,6 +23,7 @@ typedef void ( *ZaberFinishedListener )();
 typedef void ( *ZaberFinishedListenerDeviceAxis )(uint8_t Device, uint8_t Axis);
 typedef void ( *ZaberCommandSentCallback )();
 typedef void ( *ZaberReplyReceivedCallback )();
+typedef void ( *ZaberAlertReceivedCallback )(uint8_t Device, uint8_t Axis);
 class ZaberMaster
 {
 	public:
@@ -355,6 +356,7 @@ class ZaberMaster
 			CommandScope Scope;
 			ZaberCommandSentCallback SentCallback;
 			ZaberReplyReceivedCallback ReceivedCallback;
+			ZaberAlertReceivedCallback AlertCallback;
 		};
 		struct ParameterMessageString
 		{
@@ -451,6 +453,15 @@ class ZaberMaster
 			uint8_t Device;
 			uint32_t StartTime;
 		};
+		struct AxisPropertiesStruct
+		{
+			bool ExpectingAlert;
+			StatusType Status;
+			uint32_t Position;
+			uint32_t MaxSpeed;
+			ZaberFinishedListener ExternalCallback;
+			ZaberAlertReceivedCallback AlertCallback;
+		};
 		ZaberMaster(HardwareSerial* serial); //Invoke with ZaberMaster(&SerialN);
 		~ZaberMaster();
 		static bool Initialize();
@@ -464,6 +475,7 @@ class ZaberMaster
 		static bool SendFindRange(uint8_t Device, uint8_t Axis);
 		static bool SendMoveRel(uint8_t Device, uint8_t Axis, uint32_t Steps);
 		static bool SendMoveAbs(uint8_t Device, uint8_t Axis, uint32_t Steps);
+		static bool SendMoveAbs(uint8_t Device, uint8_t Axis, uint32_t Steps, ZaberFinishedListener CompletedCallback);
 		static bool SendSetAcceleration(uint8_t Device, uint8_t Axis, uint32_t Acceleration);
 		static bool SendGetAcceleration(uint8_t Device, uint8_t Axis);
 		static bool SendSetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t MaxSpeed);
@@ -500,10 +512,11 @@ class ZaberMaster
 		static uint8_t AxesFound[ZaberMaxDevices];
 		static CommandMessage CurrentCommand;
 		static char CommandBuffer[CommandBufferSize];
-		static bool ExpectingAlert[ZaberMaxDevices][ZaberMaxAxes];
-		static uint32_t LastPosition[ZaberMaxDevices][ZaberMaxAxes];
-		static uint32_t LastMaxSpeed[ZaberMaxDevices][ZaberMaxAxes];
-		static StatusType LastStatus[ZaberMaxDevices][ZaberMaxAxes];
+		static AxisPropertiesStruct AxisProperties[ZaberMaxDevices][ZaberMaxAxes];
+		//static bool ExpectingAlert[ZaberMaxDevices][ZaberMaxAxes];
+		//static uint32_t LastPosition[ZaberMaxDevices][ZaberMaxAxes];
+		//static uint32_t LastMaxSpeed[ZaberMaxDevices][ZaberMaxAxes];
+		//static StatusType LastStatus[ZaberMaxDevices][ZaberMaxAxes];
 		static ZaberFinishedListenerDeviceAxis MovementComplete;
 		static ZaberFinishedListener ReplyComplete;
 		static ZaberFinishedListener InitializationComplete;
@@ -551,7 +564,7 @@ class ZaberMaster
 		static void FailToParse();
 		static void ProcessReplyMessage();
 		static void ProcessAlertMessage();
-		static void SetLastStatus();
+		static void SetStatus();
 		static void SendCommand();
 		static void RunNextInitializationStep();
 		static void SetExpectingAlerts(uint8_t Device, uint8_t Axis);
@@ -562,9 +575,11 @@ class ZaberMaster
 		static float CharPointerToFloat(char* Buffer, size_t BufferSize);
 		static void ClearCommandForEnqueue();
 		static void ClearCurrentCommand();
+		static void AssignAlertCallbacks(uint8_t CommandIndex);
 
-		static void ProcessMoveEnded();
+		static void ProcessMoveEnded(uint8_t Device, uint8_t Axis);
 		static void ProcessGetReceived();
+		static void ProcessSetReturned();
 		static void ProcessRenumberReceived();
 		static void ProcessMoveStarted();
 
