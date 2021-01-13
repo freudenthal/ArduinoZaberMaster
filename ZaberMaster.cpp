@@ -367,82 +367,98 @@ bool ZaberMaster::Initialize()
 	RunNextInitializationStep();
 	return true;
 }
-bool ZaberMaster::SendRenumber()
+bool ZaberMaster::SendRenumber(ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Renumber;
 	CommandForEnqueue.Axis = 0;
 	CommandForEnqueue.Device = 0;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.ParameterCount = 0;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendEStop(uint8_t Device, uint8_t Axis)
+bool ZaberMaster::SendEStop(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::EStop;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.ParameterCount = 0;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendStop(uint8_t Device, uint8_t Axis)
+bool ZaberMaster::SendStop(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::EStop;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.ParameterCount = 0;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendHome(uint8_t Device, uint8_t Axis)
+bool ZaberMaster::SendHome(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Home;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.ParameterCount = 0;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendSystemReset(uint8_t Device)
+bool ZaberMaster::SendSystemReset(uint8_t Device, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::SystemReset;
 	CommandForEnqueue.Axis = 0;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.ParameterCount = 0;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendSystemRestore(uint8_t Device)
+bool ZaberMaster::SendSystemRestore(uint8_t Device, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::SystemRestore;
 	CommandForEnqueue.Axis = 0;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.ParameterCount = 0;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendClearWarnings(uint8_t Device)
+bool ZaberMaster::SendClearWarnings(uint8_t Device, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Warnings;
 	CommandForEnqueue.Axis = 0;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Parameter;
 	CommandForEnqueue.Parameters[0].Value.Parameter = ParameterMessageType::Clear;
 	CommandForEnqueue.ParameterCount = 1;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendFindRange(uint8_t Device, uint8_t Axis)
+bool ZaberMaster::SendFindRange(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::ToolsFindRange;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.ParameterCount = 0;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendMoveRel(uint8_t Device, uint8_t Axis, uint32_t Steps)
+bool ZaberMaster::SendMoveRel(uint8_t Device, uint8_t Axis, uint32_t Steps, ZaberFinishedListener ReturnCallback)
 {
+	if ( (Device > 0) && (Axis > 0) )
+	{
+		AxisProperties[Device - 1][Axis - 1].ExternalCallback = ReturnCallback;
+	}
+	else
+	{
+		CommandForEnqueue.Callback = ReturnCallback;
+	}
 	CommandForEnqueue.Command = CommandMessageType::Move;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
@@ -454,17 +470,16 @@ bool ZaberMaster::SendMoveRel(uint8_t Device, uint8_t Axis, uint32_t Steps)
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendMoveAbs(uint8_t Device, uint8_t Axis, uint32_t Steps, ZaberFinishedListener CompletedCallback)
+bool ZaberMaster::SendMoveAbs(uint8_t Device, uint8_t Axis, uint32_t Steps, ZaberFinishedListener ReturnCallback)
 {
 	if ( (Device > 0) && (Axis > 0) )
 	{
-		AxisProperties[Device - 1][Axis - 1].ExternalCallback = CompletedCallback;
-		return SendMoveAbs(Device, Axis, Steps);
+		AxisProperties[Device - 1][Axis - 1].ExternalCallback = ReturnCallback;
 	}
-	return false;
-}
-bool ZaberMaster::SendMoveAbs(uint8_t Device, uint8_t Axis, uint32_t Steps)
-{
+	else
+	{
+		CommandForEnqueue.Callback = ReturnCallback;
+	}
 	CommandForEnqueue.Command = CommandMessageType::Move;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
@@ -476,11 +491,12 @@ bool ZaberMaster::SendMoveAbs(uint8_t Device, uint8_t Axis, uint32_t Steps)
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendSetAcceleration(uint8_t Device, uint8_t Axis, uint32_t Acceleration)
+bool ZaberMaster::SendSetAcceleration(uint8_t Device, uint8_t Axis, uint32_t Acceleration, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Set;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::Accel;
 	CommandForEnqueue.Parameters[1].Type = CommandParameterType::Integer;
@@ -489,22 +505,24 @@ bool ZaberMaster::SendSetAcceleration(uint8_t Device, uint8_t Axis, uint32_t Acc
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendGetAcceleration(uint8_t Device, uint8_t Axis)
+bool ZaberMaster::SendGetAcceleration(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Get;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::Accel;
 	CommandForEnqueue.ParameterCount = 1;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendSetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t MaxSpeed)
+bool ZaberMaster::SendSetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t MaxSpeed, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Set;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::MaxSpeed;
 	CommandForEnqueue.Parameters[1].Type = CommandParameterType::Integer;
@@ -513,22 +531,24 @@ bool ZaberMaster::SendSetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t MaxSpee
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendGetMaxSpeed(uint8_t Device, uint8_t Axis)
+bool ZaberMaster::SendGetMaxSpeed(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Get;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::MaxSpeed;
 	CommandForEnqueue.ParameterCount = 1;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendSetLimitMax(uint8_t Device, uint8_t Axis, uint32_t LimitMax)
+bool ZaberMaster::SendSetLimitMax(uint8_t Device, uint8_t Axis, uint32_t LimitMax, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Set;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::LimitMax;
 	CommandForEnqueue.Parameters[1].Type = CommandParameterType::Integer;
@@ -537,22 +557,24 @@ bool ZaberMaster::SendSetLimitMax(uint8_t Device, uint8_t Axis, uint32_t LimitMa
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendGetLimitMax(uint8_t Device, uint8_t Axis)
+bool ZaberMaster::SendGetLimitMax(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Get;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::LimitMax;
 	CommandForEnqueue.ParameterCount = 1;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendSetLimitMin(uint8_t Device, uint8_t Axis, uint32_t LimitMin)
+bool ZaberMaster::SendSetLimitMin(uint8_t Device, uint8_t Axis, uint32_t LimitMin, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Set;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::LimitMin;
 	CommandForEnqueue.Parameters[1].Type = CommandParameterType::Integer;
@@ -561,22 +583,24 @@ bool ZaberMaster::SendSetLimitMin(uint8_t Device, uint8_t Axis, uint32_t LimitMi
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendGetLimitMin(uint8_t Device, uint8_t Axis)
+bool ZaberMaster::SendGetLimitMin(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Get;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::LimitMin;
 	CommandForEnqueue.ParameterCount = 1;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendSetAlertStatus(uint8_t Device, bool Enable)
+bool ZaberMaster::SendSetAlertStatus(uint8_t Device, bool Enable, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Set;
 	CommandForEnqueue.Axis = 0;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::CommAlert;
 	CommandForEnqueue.Parameters[1].Type = CommandParameterType::Integer;
@@ -585,22 +609,24 @@ bool ZaberMaster::SendSetAlertStatus(uint8_t Device, bool Enable)
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendGetAlertStatus(uint8_t Device)
+bool ZaberMaster::SendGetAlertStatus(uint8_t Device, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Get;
 	CommandForEnqueue.Axis = 0;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::CommAlert;
 	CommandForEnqueue.ParameterCount = 1;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendSetKnobEnable(uint8_t Device, uint8_t Axis, bool Enable)
+bool ZaberMaster::SendSetKnobEnable(uint8_t Device, uint8_t Axis, bool Enable, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Set;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::KnobEnable;
 	CommandForEnqueue.Parameters[1].Type = CommandParameterType::Integer;
@@ -609,33 +635,36 @@ bool ZaberMaster::SendSetKnobEnable(uint8_t Device, uint8_t Axis, bool Enable)
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendGetKnobEnable(uint8_t Device, uint8_t Axis)
+bool ZaberMaster::SendGetKnobEnable(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Get;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::KnobEnable;
 	CommandForEnqueue.ParameterCount = 1;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendSetParked(uint8_t Device, uint8_t Axis, bool Enable)
+bool ZaberMaster::SendSetParked(uint8_t Device, uint8_t Axis, bool Enable, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::ToolsParking;
 	CommandForEnqueue.Axis = 0;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Parameter;
 	CommandForEnqueue.Parameters[0].Value.Parameter = (Enable) ? ParameterMessageType::Park : ParameterMessageType::Unpark;
 	CommandForEnqueue.ParameterCount = 1;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendSetResolution(uint8_t Device, uint8_t Axis, uint8_t Resolution)
+bool ZaberMaster::SendSetResolution(uint8_t Device, uint8_t Axis, uint8_t Resolution, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Set;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::Resolution;
 	CommandForEnqueue.Parameters[1].Type = CommandParameterType::Integer;
@@ -644,22 +673,24 @@ bool ZaberMaster::SendSetResolution(uint8_t Device, uint8_t Axis, uint8_t Resolu
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendGetResolution(uint8_t Device, uint8_t Axis)
+bool ZaberMaster::SendGetResolution(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Get;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::Resolution;
 	CommandForEnqueue.ParameterCount = 1;
 	CommandEnqueue();
 	return true;
 }
-bool ZaberMaster::SendGetPosition(uint8_t Device, uint8_t Axis)
+bool ZaberMaster::SendGetPosition(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback)
 {
 	CommandForEnqueue.Command = CommandMessageType::Get;
 	CommandForEnqueue.Axis = Axis;
 	CommandForEnqueue.Device = Device;
+	CommandForEnqueue.Callback = ReturnCallback;
 	CommandForEnqueue.Parameters[0].Type = CommandParameterType::Setting;
 	CommandForEnqueue.Parameters[0].Value.Setting = SettingMessageType::Pos;
 	CommandForEnqueue.ParameterCount = 1;
