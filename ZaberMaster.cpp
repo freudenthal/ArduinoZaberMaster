@@ -1669,6 +1669,7 @@ void ZaberMaster::ProcessReplyMessage()
 }
 void ZaberMaster::ProcessMoveEnded(uint8_t Device, uint8_t Axis)
 {
+	/*
 	SendGetPosition(Device,Axis);
 	if (Verbose)
 	{
@@ -1678,6 +1679,7 @@ void ZaberMaster::ProcessMoveEnded(uint8_t Device, uint8_t Axis)
 		Serial.print(Axis);
 		Serial.print(")\n");
 	}
+	*/
 }
 void ZaberMaster::ProcessSetReturned()
 {
