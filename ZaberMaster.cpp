@@ -980,7 +980,7 @@ void ZaberMaster::CommandEnqueue()
 
 void ZaberMaster::CheckSerial()
 {
-	if (_HardwareSerial->available() > 0)
+	while (_HardwareSerial->available() > 0)
 	{
 		char Character = _HardwareSerial->read();
 		if (Verbose && (Character != EndOfLineCharacter) & (Character != CarriageReturnCharacter) )
