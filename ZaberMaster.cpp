@@ -5,8 +5,8 @@ const char ZaberMaster::EndOfLineCharacter = '\n';
 const char ZaberMaster::SpaceCharacter = ' ';
 const char ZaberMaster::CommandMarkerCharacter = '/';
 const char ZaberMaster::GetCharacter = '?';
-const uint8_t ZaberMaster::InitializationStepsCount = 6;
-const ZaberMaster::CommandMessage ZaberMaster::InitilizationSteps[]=
+const uint8_t ZaberMaster::LinearStandardInitilizationStepCount = 6;
+const ZaberMaster::CommandMessage ZaberMaster::LinearStandardInitilizationSteps[]=
 {
 	{CommandMessageType::Warnings,0,0,{{{.Parameter=ParameterMessageType::Clear},CommandParameterType::Parameter},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},1,NULL},
 	{CommandMessageType::Renumber,0,0,{{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},0,NULL},
@@ -14,6 +14,28 @@ const ZaberMaster::CommandMessage ZaberMaster::InitilizationSteps[]=
 	{CommandMessageType::Set,0,0,{{{.Setting=SettingMessageType::MaxSpeed},CommandParameterType::Setting},{{.Integer = ZaberDefaultSpeed},CommandParameterType::Integer},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},2,NULL},
 	{CommandMessageType::Set,0,0,{{{.Setting=SettingMessageType::CommAlert},CommandParameterType::Setting},{{.Integer = 1},CommandParameterType::Integer},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},2,NULL},
 	{CommandMessageType::ToolsFindRange,0,0,{{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},0,NULL},
+};
+const uint8_t ZaberMaster::RotationalStandardInitilizationStepCount = 6;
+const ZaberMaster::CommandMessage ZaberMaster::RotationalStandardInitilizationSteps[]=
+{
+	{CommandMessageType::Warnings,0,0,{{{.Parameter=ParameterMessageType::Clear},CommandParameterType::Parameter},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},1,NULL},
+	{CommandMessageType::Renumber,0,0,{{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},0,NULL},
+	{CommandMessageType::Get,0,0,{{{.Setting=SettingMessageType::SystemAxisCount},CommandParameterType::Setting},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},1,NULL},
+	{CommandMessageType::Set,0,0,{{{.Setting=SettingMessageType::MaxSpeed},CommandParameterType::Setting},{{.Integer = ZaberDefaultSpeed},CommandParameterType::Integer},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},2,NULL},
+	{CommandMessageType::Set,0,0,{{{.Setting=SettingMessageType::CommAlert},CommandParameterType::Setting},{{.Integer = 1},CommandParameterType::Integer},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},2,NULL},
+	{CommandMessageType::Home,0,0,{{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},0,NULL},
+};
+const uint8_t ZaberMaster::LinearAndRotationalInitilizationStepCount = 8;
+const ZaberMaster::CommandMessage ZaberMaster::LinearAndRotationalInitilizationSteps[]=
+{
+	{CommandMessageType::Warnings,0,0,{{{.Parameter=ParameterMessageType::Clear},CommandParameterType::Parameter},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},1,NULL},
+	{CommandMessageType::Renumber,0,0,{{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},0,NULL},
+	{CommandMessageType::Get,0,0,{{{.Setting=SettingMessageType::SystemAxisCount},CommandParameterType::Setting},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},1,NULL},
+	{CommandMessageType::Set,0,0,{{{.Setting=SettingMessageType::MaxSpeed},CommandParameterType::Setting},{{.Integer = ZaberDefaultSpeed},CommandParameterType::Integer},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},2,NULL},
+	{CommandMessageType::Set,0,0,{{{.Setting=SettingMessageType::CommAlert},CommandParameterType::Setting},{{.Integer = 1},CommandParameterType::Integer},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},2,NULL},
+	{CommandMessageType::ToolsFindRange,0,0,{{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},0,NULL},
+	{CommandMessageType::ToolsFindRange,0,1,{{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},0,NULL},
+	{CommandMessageType::Home,1,1,{{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None},{0,CommandParameterType::None}},0,NULL},
 };
 const ZaberMaster::CommandString ZaberMaster::CommandIdentifier[]=
 {
@@ -290,6 +312,9 @@ uint8_t ZaberMaster::CommandQueueHead;
 uint8_t ZaberMaster::CommandQueueTail;
 bool ZaberMaster::CommandQueueFullFlag;
 ZaberMaster::AxisPropertiesStruct ZaberMaster::AxisProperties[ZaberMaxDevices][ZaberMaxAxes];
+ZaberMaster::InitializationType ZaberMaster::InitializationBehavior;
+ZaberMaster::CommandMessage* ZaberMaster::InitilizationSteps;
+uint8_t ZaberMaster::InitializationStepsCount;
 
 ZaberFinishedListenerDeviceAxis ZaberMaster::MovementComplete;
 ZaberFinishedListener ZaberMaster::ReplyComplete;
@@ -317,6 +342,7 @@ ZaberMaster::ZaberMaster(HardwareSerial* serial)
 	memset(ReturnBuffer,0,sizeof(ReturnBuffer));
 	ReturnBufferPosition = 0;
 	ReturnMessage.Type = MessageType::Reply;
+	InitializationBehavior = InitializationType::LinearStandard;
 	for (uint8_t Index = 0; Index < ZaberMaxReplyData; Index++)
 	{
 		ReturnMessage.Data[Index].Type = ReplyDataType::None;
@@ -353,8 +379,32 @@ void ZaberMaster::SetVerbose(bool VerboseToSet)
 {
 	Verbose = VerboseToSet;
 }
+bool ZaberMaster::SetInitializationType(InitializationType TypeToSet)
+{
+	InitializationBehavior = TypeToSet;
+	return true;
+}
 bool ZaberMaster::Initialize()
 {
+	switch (InitializationBehavior)
+	{
+		case InitializationType::LinearStandard:
+			InitilizationSteps = const_cast<CommandMessage*>(LinearStandardInitilizationSteps);
+			InitializationStepsCount = LinearStandardInitilizationStepCount;
+			break;
+		case InitializationType::RotationalStandard:
+			InitilizationSteps = const_cast<CommandMessage*>(RotationalStandardInitilizationSteps);
+			InitializationStepsCount = RotationalStandardInitilizationStepCount;
+			break;
+		case InitializationType::LinearAndRotational:
+			InitilizationSteps = const_cast<CommandMessage*>(LinearAndRotationalInitilizationSteps);
+			InitializationStepsCount = LinearAndRotationalInitilizationStepCount;
+			break;
+		default:
+			InitilizationSteps = const_cast<CommandMessage*>(LinearStandardInitilizationSteps);
+			InitializationStepsCount = LinearStandardInitilizationStepCount;
+			break;
+	}
 	Initializing = true;
 	InitializationStep = 0;
 	Initialized = false;

@@ -11,8 +11,8 @@ Zaber master controller. Takes a serial bus and controls a Zaber bus.
 
 #define ZaberMaxDataString 8
 #define ZaberMaxReplyData 4
-#define ZaberMaxDevices 1
-#define ZaberMaxAxes 2
+#define ZaberMaxDevices 2
+#define ZaberMaxAxes 3
 #define CommandBufferSize 24
 #define ReturnBufferSize 48
 #define ZaberParameterMaxLength 5
@@ -453,6 +453,13 @@ class ZaberMaster
 			uint8_t Device;
 			uint32_t StartTime;
 		};
+		enum class InitializationType : uint8_t 
+		{
+			LinearStandard,
+			RotationalStandard,
+			LinearAndRotational,
+			Count
+		};
 		struct AxisPropertiesStruct
 		{
 			bool ExpectingAlert;
@@ -464,6 +471,7 @@ class ZaberMaster
 		};
 		ZaberMaster(HardwareSerial* serial); //Invoke with ZaberMaster(&SerialN);
 		~ZaberMaster();
+		static bool SetInitializationType(InitializationType TypeToSet);
 		static bool Initialize();
 		static bool SendRenumber(ZaberFinishedListener ReturnCallback = NULL);
 		static bool SendEStop(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback = NULL);
@@ -506,16 +514,15 @@ class ZaberMaster
 		static bool Busy;
 		static bool Initializing;
 		static bool Initialized;
+		static InitializationType InitializationBehavior;
+		static CommandMessage* InitilizationSteps;
 		static uint8_t InitializationStep;
+		static uint8_t InitializationStepsCount;
 		static uint8_t DevicesFound;
 		static uint8_t AxesFound[ZaberMaxDevices];
 		static CommandMessage CurrentCommand;
 		static char CommandBuffer[CommandBufferSize];
 		static AxisPropertiesStruct AxisProperties[ZaberMaxDevices][ZaberMaxAxes];
-		//static bool ExpectingAlert[ZaberMaxDevices][ZaberMaxAxes];
-		//static uint32_t LastPosition[ZaberMaxDevices][ZaberMaxAxes];
-		//static uint32_t LastMaxSpeed[ZaberMaxDevices][ZaberMaxAxes];
-		//static StatusType LastStatus[ZaberMaxDevices][ZaberMaxAxes];
 		static ZaberFinishedListenerDeviceAxis MovementComplete;
 		static ZaberFinishedListener ReplyComplete;
 		static ZaberFinishedListener InitializationComplete;
@@ -587,8 +594,12 @@ class ZaberMaster
 		static const char SpaceCharacter;
 		static const char CommandMarkerCharacter;
 		static const char GetCharacter;
-		static const uint8_t InitializationStepsCount;
-		static const CommandMessage InitilizationSteps[];
+		static const CommandMessage LinearStandardInitilizationSteps[];
+		static const uint8_t LinearStandardInitilizationStepCount;
+		static const CommandMessage RotationalStandardInitilizationSteps[];
+		static const uint8_t RotationalStandardInitilizationStepCount;
+		static const CommandMessage LinearAndRotationalInitilizationSteps[];
+		static const uint8_t LinearAndRotationalInitilizationStepCount;
 		static const CommandString CommandIdentifier[];
 		static const ParameterMessageString ParameterIdentifier[];
 		static const SettingString SettingIdentifier[];
