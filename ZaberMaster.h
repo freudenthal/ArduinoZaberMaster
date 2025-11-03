@@ -11,10 +11,10 @@ Zaber master controller. Takes a serial bus and controls a Zaber bus.
 
 #define ZaberMaxDataString 8
 #define ZaberMaxReplyData 4
-#define ZaberMaxDevices 2
+#define ZaberMaxDevices 3
 #define ZaberMaxAxes 3
 #define CommandBufferSize 24
-#define ReturnBufferSize 48
+#define ReturnBufferSize 64
 #define ZaberParameterMaxLength 5
 #define ZaberDefaultSpeed 250000
 #define ZaberQueueCount 4
@@ -124,6 +124,7 @@ class ZaberMaster
 		};
 		enum class CommandMessageType : uint8_t 
 		{
+			Status,
 			EStop,
 			Get,
 			Home,
@@ -464,15 +465,26 @@ class ZaberMaster
 		{
 			bool ExpectingAlert;
 			StatusType Status;
+			bool Polling;
+			bool PollingSent;
+			uint32_t LastPollTime;
+			uint32_t EncoderPosition;
 			uint32_t Position;
 			uint32_t MaxSpeed;
 			ZaberFinishedListener ExternalCallback;
 			ZaberAlertReceivedCallback AlertCallback;
 		};
+		struct Tok
+		{
+			const char* p;
+			size_t n;
+		};
 		ZaberMaster(HardwareSerial* serial); //Invoke with ZaberMaster(&SerialN);
 		~ZaberMaster();
 		static bool SetInitializationType(InitializationType TypeToSet);
+		static bool Begin(uint8_t NumberOfDevices, uint8_t* AxisCount);
 		static bool Initialize();
+		static bool SendGetStatus(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback);
 		static bool SendRenumber(ZaberFinishedListener ReturnCallback = NULL);
 		static bool SendEStop(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback = NULL);
 		static bool SendStop(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback = NULL);
@@ -499,8 +511,10 @@ class ZaberMaster
 		static bool SendSetResolution(uint8_t Device, uint8_t Axis, uint8_t Resolution, ZaberFinishedListener ReturnCallback = NULL);
 		static bool SendGetResolution(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback = NULL);
 		static bool SendGetPosition(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback = NULL);
+		static bool SendGetEncoderPosition(uint8_t Device, uint8_t Axis, ZaberFinishedListener ReturnCallback = NULL);
 		static bool SendGetAxes(uint8_t Device, ZaberFinishedListener ReturnCallback = NULL);
 		static bool GetPosition(uint8_t Device, uint8_t Axis, uint32_t* Position);
+		static bool GetEncoderPosition(uint8_t Device, uint8_t Axis, uint32_t* EncoderPosition);
 		static bool GetMaxSpeed(uint8_t Device, uint8_t Axis, uint32_t* MaxSpeed);
 		static bool GetIsBusy(uint8_t Device, uint8_t Axis, StatusType* Status);
 		static void SetInitializationCompleteCallback(ZaberFinishedListener _InitializationComplete);
@@ -509,7 +523,7 @@ class ZaberMaster
 		static void SetVerbose(bool VerboseToSet);
 		static void Check();
 	private:
-		static HardwareSerial* _HardwareSerial;
+		static HardwareSerial* _StreamPort;
 		static ModeType Mode;
 		static bool Busy;
 		static bool Initializing;
@@ -529,14 +543,18 @@ class ZaberMaster
 		static ZaberCommandSentCallback CurrentSentCallback;
 		static ZaberReplyReceivedCallback CurrentReceivedCallback;
 		static char ReturnBuffer[ReturnBufferSize];
-		static char VerboseBuffer[ReturnBufferSize];
-		static uint8_t VerboseBufferIndex;
-		static uint8_t ReturnBufferPosition;
+		static uint8_t ReturnBufferCount;
 		static ReplyMessage ReturnMessage;
 		static bool ReturnMessageDataTypeDetermined;
 		static ReplyParts CurrentReplyPart;
 		static bool RecievingReply;
 		static bool Verbose;
+		static bool PollingAny;
+		static bool PollingEnabled;
+		static bool AlertEnabled;
+		static bool ExpectingAlert;
+		static uint32_t PollingTimeMax;
+		static WarningType LastWarning;
 
 		static CommandMessage CommandQueue[ZaberQueueCount];
 		static CommandMessage CommandForEnqueue;
@@ -554,18 +572,11 @@ class ZaberMaster
 		static void CommandEnqueue();
 		static bool CommandQueuePullToCurrentCommand();
 		static void CheckSerial();
+		static void CheckPollingStatus();
+		static void CheckExpectingAlert();
+		static void EnqueStatusForPolling();
 
-		static void ParseCharacterForReply(char Character);
-		static void ParseCharacterForAlert(char Character);
-		static void ParseType(char Character);
-		static void ParseDevice(char Character, ReplyParts NextState);
-		static void ParseAxis(char Character, ReplyParts NextState);
-		static void ParseFlag(char Character, ReplyParts NextState);
-		static void ParseStatus(char Character, ReplyParts NextState);
-		static void ParseWarning(char Character, ReplyParts NextState);
-		static void ParseData(char Character);
 		static void ClearReturnBuffer();
-		static void ClearVerboseBuffer();
 		static void ResetReturnMessage();
 		static void FailToParse();
 		static void ProcessReplyMessage();
@@ -574,7 +585,6 @@ class ZaberMaster
 		static void SendCommand();
 		static void RunNextInitializationStep();
 		static void SetExpectingAlerts(uint8_t Device, uint8_t Axis);
-		static bool CheckExpectingAlert();
 		static uint8_t IntToCharPointer(uint32_t Input, char* Buffer, size_t BufferSize);
 		static uint8_t FloatToCharPointer(float Input, char* Buffer, size_t BufferSize);
 		static uint8_t CharPointerToInt(char* Buffer, size_t BufferSize);
@@ -588,6 +598,28 @@ class ZaberMaster
 		static void ProcessSetReturned();
 		static void ProcessRenumberReceived();
 		static void ProcessMoveStarted();
+
+		static void ProcessReturnBuffer(char* ReturnBuffer, uint8_t BufferCount);
+		static void PrintReplyMessage(ReplyMessage& msg);
+		static const char* toString(ReplyDataErrorType v);
+		static const char* toString(ReplyDataType v);
+		static const char* toString(WarningType v);
+		static const char* toString(FlagType v);
+		static const char* toString(StatusType v);
+		static const char* toString(MessageType v);
+		static bool ParseZaberReplyLine(const char* buf, size_t len, ReplyMessage& out);
+		static size_t tokenize_space(const char* s, size_t n, Tok out[], size_t outcap);
+		static WarningType parse_warning(const Tok& t);
+		static StatusType parse_status(const Tok& t);
+		static FlagType parse_flag(const Tok& t);
+		static MessageType parse_msg_type(char c);
+		static float to_float(const Tok& t);
+		static long to_int(const Tok& t);
+		static int to_uint(const Tok& t);
+		static bool tok_is_floatish(const Tok& t);
+		static bool tok_is_int(const Tok& t);
+		static bool tok_is_uint(const Tok& t);
+		static bool tok_eq(const Tok& t, const char* s);
 
 		static const char CarriageReturnCharacter;
 		static const char EndOfLineCharacter;
