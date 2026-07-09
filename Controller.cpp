@@ -1,5 +1,7 @@
 #include "Controller.hpp"
 
+#include <algorithm>
+
 namespace Zaber
 {
 	// ==============================
