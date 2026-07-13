@@ -51,7 +51,7 @@ namespace Zaber
 		for (uint8_t i = 0; i < ARRAY_SIZE(StatusTypeProperties::ALL_STATUSES); i++)
 		{
 			const auto& properties = StatusTypeProperties::ALL_STATUSES[i];
-			if (codeString == properties.Code) return StatusType(i);
+			if (properties.Code != nullptr && codeString == properties.Code) return StatusType(i);
 		}
 		return std::nullopt;
 	}
@@ -78,7 +78,7 @@ namespace Zaber
 		for (uint8_t i = 0; i < ARRAY_SIZE(FlagTypeProperties::ALL_FLAGS); i++)
 		{
 			const auto& properties = FlagTypeProperties::ALL_FLAGS[i];
-			if (codeString == properties.Code) return FlagType(i);
+			if (properties.Code != nullptr && codeString == properties.Code) return FlagType(i);
 		}
 		return std::nullopt;
 	}
@@ -121,7 +121,7 @@ namespace Zaber
 		for (uint8_t i = 0; i < ARRAY_SIZE(WarningTypeProperties::ALL_WARNINGS); i++)
 		{
 			const auto& properties = WarningTypeProperties::ALL_WARNINGS[i];
-			if (codeString == properties.Code) return WarningType(i);
+			if (properties.Code != nullptr && codeString == properties.Code) return WarningType(i);
 		}
 		return std::nullopt;
 	}
@@ -289,7 +289,7 @@ namespace Zaber
 		for (uint8_t i = 0; i < ARRAY_SIZE(RejectionError::ALL_REJECTION_ERRORS); i++)
 		{
 			const auto& properties = RejectionError::ALL_REJECTION_ERRORS[i];
-			if (codeString == properties.Code) return RejectionErrorType(i);
+			if (properties.Code != nullptr && codeString == properties.Code) return RejectionErrorType(i);
 		}
 		return std::nullopt;
 	}
