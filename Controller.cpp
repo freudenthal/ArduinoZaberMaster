@@ -841,7 +841,7 @@ namespace Zaber
 			// do not call the global callbacks when initializing
 			if (!Initializing && OnReplyComplete)
 			{
-				OnReplyComplete(Response);
+				OnReplyComplete(LastSentCommand, Response);
 			}
 		}
 

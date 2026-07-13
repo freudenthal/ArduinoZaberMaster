@@ -29,7 +29,7 @@ namespace Zaber
 	public:
 		// inner types and structs
 		using Listener = std::function<void()>;
-		using ReplyListener = std::function<void(const ReplyParser::ReplyMessage& Response)>;
+		using ReplyListener = std::function<void(const CommandMessage&, const ReplyParser::ReplyMessage&)>;
 		using DeviceAxisListener = CommandMessage::DeviceAxisListener;
 
 		enum class InitializationType : uint8_t
