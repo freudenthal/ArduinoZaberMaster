@@ -362,7 +362,10 @@ namespace Zaber
 								Serial.printf("<ZABER>(Polling for device #%d Axis #%d.)\n", DeviceIndex, AxisIndex);
 							}
 							// all the preconditions for being able to send a command without breaking stuff have already been checked
+							// but only because this is the first axis to get polled in this for loop
 							SendCommandNow(CommandMessage::GetStatus(DeviceIndex, AxisIndex));
+							// stop iterating through the loop because this device is now awaiting a reply and cannot poll other axes
+							break;
 						}
 					}
 				}
@@ -593,12 +596,22 @@ namespace Zaber
 
 		for (uint8_t DeviceIndex : deviceList)
 		{
+			auto& commStatus = AllDeviceProperties[DeviceIndex-1].CommStatus;
+			if (commStatus.IsAwaitingReply())
+			{
+				Serial.printf("<ZABERWARN>(Device #%d has been told to send a new command but is already awaiting a reply to \"", DeviceIndex);
+				commStatus.GetLastSentCommand().PrintVerbose(Serial);
+				Serial.print("\".)\n");
+
+			}
 			// for each device specified by the command, expect a command sent
+			commStatus.SetCommandSent(Command);
 			if (Verbose)
 			{
-				Serial.printf("<ZABER>(Device #%d now awaiting reply.)\n", DeviceIndex);
+				Serial.printf("<ZABER>(Device #%d now awaiting reply to \"", DeviceIndex);
+				commStatus.GetLastSentCommand().PrintVerbose(Serial);
+				Serial.print("\".)\n");
 			}
-			AllDeviceProperties[DeviceIndex-1].CommStatus.SetCommandSent(Command);
 		}
 	}
 
